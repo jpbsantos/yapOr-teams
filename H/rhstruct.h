@@ -9,7 +9,10 @@
 
 
 
-
+#ifdef YAPOR_TEAMS
+RestoreOtaplInst(INVALIDWORK,_invalidwork,PredInvalidwork);
+RestoreOtaplInst(MPISTART,_mpistart,PredMPIStart);
+#endif
 
 
 

@@ -108,8 +108,11 @@ void Yap_init_global_optyap_data(int max_table_size, int n_workers, int sch_loop
 #ifdef YAPOR
   /* global static data */
   GLOBAL_number_workers= n_workers;
+
+#ifndef YAPOR_TEAMS
   GLOBAL_worker_pid(0) = getpid();
   for (i = 1; i < GLOBAL_number_workers; i++) GLOBAL_worker_pid(i) = 0;
+#endif
   GLOBAL_scheduler_loop = sch_loop;
   GLOBAL_delayed_release_load = delay_load;
 
@@ -118,6 +121,7 @@ void Yap_init_global_optyap_data(int max_table_size, int n_workers, int sch_loop
   BITMAP_clear(GLOBAL_bm_present_workers);
   for (i = 0; i < GLOBAL_number_workers; i++) 
     BITMAP_insert(GLOBAL_bm_present_workers, i);
+  
   BITMAP_copy(GLOBAL_bm_idle_workers, GLOBAL_bm_present_workers);
   BITMAP_clear(GLOBAL_bm_root_cp_workers);
   BITMAP_clear(GLOBAL_bm_invisible_workers);
@@ -166,6 +170,39 @@ void Yap_init_global_optyap_data(int max_table_size, int n_workers, int sch_loop
 #endif /* TRIE_LOCK_USING_GLOBAL_ARRAY */
 #endif /* TABLING */
 
+#ifdef YAPOR_TEAMS
+if(team_id == 0 && worker_id==0){
+    printf("_____AQUI\n");
+    GLOBAL_mpi_active = 0;
+#ifdef YAPOR_MPI
+    GLOBAL_mpi_load(0) = 1;
+    for(i=1;i<100;i++)
+    GLOBAL_mpi_load(i) = 0;
+#endif
+    GLOBAL_worker_pid(0) = getpid();
+    GLOBAL_worker_pid_counter = 1;
+    GLOBAL_counter_teams = 0;
+    GLOBAL_counter_comms = 0;
+    GLOBAL_start_area = LOCAL_GlobalBase;
+    GLOBAL_team_area_pointer(0) = LOCAL_GlobalBase;
+    GLOBAL_team_area_pointer(1) = LOCAL_GlobalBase + Yap_worker_area_size;
+    GLOBAL_local_id(0) = 0;
+    GLOBAL_local_id(1) = 1;  
+    INIT_LOCK(GLOBAL_lock_worker_pid);   
+}
+    BITMAP_clear(GLOBAL_bm_present_team_workers);
+    INIT_LOCK(GLOBAL_locks_bm_present_team_workers);
+ 
+   GLOBAL_flag(team_id) = 0;
+   GLOBAL_comm_rank(team_id) = NULL;
+   GLOBAL_comm_number(team_id) = -1;
+   INIT_LOCK(GLOBAL_lock_team(team_id));
+   INIT_LOCK(GLOBAL_lock_free_workers);
+   BITMAP_copy(GLOBAL_bm_free_workers,GLOBAL_bm_present_workers);
+   INIT_LOCK(GLOBAL_lock_share_team_request(team_id));
+   GLOBAL_share_team_request(team_id)= MAX_WORKERS;
+   GLOBAL_team_reply_signal(team_id) = worker_ready;
+#endif
   return;
 }
 

@@ -61,7 +61,7 @@ static void InitWorker(int wid) {
   REMOTE_UncaughtThrow(wid) = FALSE;
   REMOTE_DoingUndefp(wid) = FALSE;
   REMOTE_StartLine(wid) = 0L;
-  InitScratchPad(wid);
+  //InitScratchPad(wid);
 #ifdef  COROUTINING
   REMOTE_WokenGoals(wid) = 0L;
   REMOTE_AttsMutableList(wid) = 0L;

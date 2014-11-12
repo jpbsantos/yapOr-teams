@@ -25,6 +25,13 @@
 // Restore... sets up call to RestoreFunc
 //
 
+#ifdef YAPOR_TEAMS
+yamop		invalidwork_code[1]     INVALIDWORK	        InitOtaplInst(INVALIDWORK,_invalidwork,PredInvalidwork) RestoreOtaplInst(INVALIDWORK,_invalidwork,PredInvalidwork)
+struct pred_entry *pred_invalidwork     PredInvalidwork		MkPred AtomGetwork 0 PROLOG_MODULE
+yamop		mpistart_code[1]        MPISTART                InitOtaplInst(MPISTART,_mpistart,PredMPIStart)          RestoreOtaplInst(MPISTAR,_mpistart,PredMPIStart)
+struct pred_entry *pred_mpistart        PredMPIStart		MkPred AtomMPIStart 0 PROLOG_MODULE
+#endif
+
 /* memory management */
 UInt		hole_size		Yap_HoleSize		void void
 struct malloc_state *av_		Yap_av			void void

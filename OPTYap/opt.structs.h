@@ -231,6 +231,9 @@ struct local_pages {
 
 #ifdef YAPOR
 struct global_optyap_locks {
+#ifdef YAPOR_TEAMS
+  lockvar bitmap_present_team_workers;
+#endif
   lockvar bitmap_idle_workers;
   lockvar bitmap_root_cp_workers;
   lockvar bitmap_invisible_workers;
@@ -279,17 +282,62 @@ struct local_optyap_signals {
 /*********************************
 **      global_optyap_data      **
 *********************************/
+#ifdef YAPOR_TEAMS
+struct comm_optyap_data {
+
+  volatile bitmap running_teams;
+  volatile bitmap present_teams;
+  volatile bitmap finished_teams;
+  volatile bitmap idle_teams;
+  
+  lockvar lock_idle_teams;
+  lockvar lock_present_teams;
+  lockvar lock_finished_teams;
+  lockvar lock_running_teams;
+
+  choiceptr root_choice_point;
+
+  int translation_array[20];
+
+  int number_teams;
+
+  volatile int finished;
+
+#ifdef YAPOR_MPI
+  int  mpi_comm;
+  int  query_has_results;
+#endif 
+
+};
+#endif
 
 struct global_optyap_data {
   /* global data related to memory management */
   struct global_pages pages;
 
+#ifdef YAPOR_TEAMS
+  int mpi_load[100];
+  volatile bitmap present_team_workers;
+  volatile Term data_base_key;
+  int comm_rank_;
+  int comm_number;
+  volatile int flag;
+  int aux;
+  int share_team_request;
+  lockvar lock_share_team_request;
+  yamop* array[1000];
+  volatile int team_reply_signal;
+  lockvar lock_team;
+  volatile bitmap free_workers;
+   lockvar lock_free_workers;
+  long my_team_area_pointer;
+#endif
 #ifdef YAPOR
   /* global static data */
   int scheduler_loop;
   int delayed_release_load;
   int number_workers;
-  int worker_pid[MAX_WORKERS];
+
   
 #ifdef YAPOR_COW
   int master_worker;
@@ -343,70 +391,167 @@ struct global_optyap_data {
 #endif /* TABLING */
 };
 
-#define GLOBAL_pages_alloc                      (GLOBAL_optyap_data.pages.alloc_pages)
-#define GLOBAL_pages_void                       (GLOBAL_optyap_data.pages.void_pages)
-#define GLOBAL_pages_tab_ent                    (GLOBAL_optyap_data.pages.table_entry_pages)
-#define GLOBAL_pages_sg_ent                     (GLOBAL_optyap_data.pages.subgoal_entry_pages)
-#define GLOBAL_pages_sg_fr                      (GLOBAL_optyap_data.pages.subgoal_frame_pages)
-#define GLOBAL_pages_dep_fr                     (GLOBAL_optyap_data.pages.dependency_frame_pages)
-#define GLOBAL_pages_sg_node                    (GLOBAL_optyap_data.pages.subgoal_trie_node_pages)
-#define GLOBAL_pages_sg_hash                    (GLOBAL_optyap_data.pages.subgoal_trie_hash_pages)
-#define GLOBAL_pages_ans_node                   (GLOBAL_optyap_data.pages.answer_trie_node_pages)
-#define GLOBAL_pages_ans_hash                   (GLOBAL_optyap_data.pages.answer_trie_hash_pages)
-#define GLOBAL_pages_ans_ref_node               (GLOBAL_optyap_data.pages.answer_ref_node_pages)
-#define GLOBAL_pages_gt_node                    (GLOBAL_optyap_data.pages.global_trie_node_pages)
-#define GLOBAL_pages_gt_hash                    (GLOBAL_optyap_data.pages.global_trie_hash_pages)
-#define GLOBAL_pages_or_fr                      (GLOBAL_optyap_data.pages.or_frame_pages)
-#define GLOBAL_pages_qg_sol_fr                  (GLOBAL_optyap_data.pages.query_goal_solution_frame_pages)
-#define GLOBAL_pages_qg_ans_fr                  (GLOBAL_optyap_data.pages.query_goal_answer_frame_pages)
-#define GLOBAL_pages_susp_fr                    (GLOBAL_optyap_data.pages.suspension_frame_pages)
-#define GLOBAL_pages_tg_sol_fr                  (GLOBAL_optyap_data.pages.table_subgoal_solution_frame_pages)
-#define GLOBAL_pages_tg_ans_fr                  (GLOBAL_optyap_data.pages.table_subgoal_answer_frame_pages)
-#define GLOBAL_scheduler_loop                   (GLOBAL_optyap_data.scheduler_loop)
-#define GLOBAL_delayed_release_load             (GLOBAL_optyap_data.delayed_release_load)
-#define GLOBAL_number_workers                   (GLOBAL_optyap_data.number_workers)
-#define GLOBAL_worker_pid(worker)               (GLOBAL_optyap_data.worker_pid[worker])
-#define GLOBAL_master_worker                    (GLOBAL_optyap_data.master_worker)
-#define GLOBAL_execution_time                   (GLOBAL_optyap_data.execution_time)
-#ifdef YAPOR_THREADS
-#define Get_GLOBAL_root_cp()	                offset_to_cptr(GLOBAL_optyap_data.root_choice_point_offset)
-#define Set_GLOBAL_root_cp(bptr)                (GLOBAL_optyap_data.root_choice_point_offset = cptr_to_offset(bptr))
-#else
-#define GLOBAL_root_cp                          (GLOBAL_optyap_data.root_choice_point)
-#define Get_GLOBAL_root_cp()                    (GLOBAL_optyap_data.root_choice_point)
-#define Set_GLOBAL_root_cp(bptr)                (GLOBAL_optyap_data.root_choice_point = (bptr))
+#ifdef YAPOR_TEAMS
+struct global_optyap_team_data {
+
+#ifdef YAPOR_TEAMS
+  char mapfile_path[1000];
+  UInt allocated_memory;
+  size_t stacks_area;
+  int counter_teams;
+  int counter_comms;
+  long team_area_pointer[100];
+  int  local_id[100];
+#ifdef YAPOR_MPI
+  int  mpi_active;
 #endif
-#define GLOBAL_root_or_fr                       (GLOBAL_optyap_data.root_or_frame)
-#define GLOBAL_bm_present_workers               (GLOBAL_optyap_data.present_workers)
-#define GLOBAL_bm_idle_workers                  (GLOBAL_optyap_data.idle_workers)
-#define GLOBAL_bm_root_cp_workers               (GLOBAL_optyap_data.root_cp_workers)
-#define GLOBAL_bm_invisible_workers             (GLOBAL_optyap_data.invisible_workers)
-#define GLOBAL_bm_requestable_workers           (GLOBAL_optyap_data.requestable_workers)
-#define GLOBAL_bm_finished_workers              (GLOBAL_optyap_data.finished_workers)
-#define GLOBAL_bm_pruning_workers               (GLOBAL_optyap_data.pruning_workers)
-#define GLOBAL_locks_bm_idle_workers            (GLOBAL_optyap_data.locks.bitmap_idle_workers)
-#define GLOBAL_locks_bm_root_cp_workers         (GLOBAL_optyap_data.locks.bitmap_root_cp_workers)
-#define GLOBAL_locks_bm_invisible_workers       (GLOBAL_optyap_data.locks.bitmap_invisible_workers)
-#define GLOBAL_locks_bm_requestable_workers     (GLOBAL_optyap_data.locks.bitmap_requestable_workers)
-#define GLOBAL_locks_bm_finished_workers        (GLOBAL_optyap_data.locks.bitmap_finished_workers)
-#define GLOBAL_locks_bm_pruning_workers         (GLOBAL_optyap_data.locks.bitmap_pruning_workers)
-#define GLOBAL_locks_who_locked_heap            (GLOBAL_optyap_data.locks.who_locked_heap)
-#define GLOBAL_locks_heap_access                (GLOBAL_optyap_data.locks.heap_access)
-#define GLOBAL_locks_alloc_block                (GLOBAL_optyap_data.locks.alloc_block)
-#define GLOBAL_branch(worker, depth)            (GLOBAL_optyap_data.branch[worker][depth])
-#define GLOBAL_parallel_mode                    (GLOBAL_optyap_data.parallel_mode)
-#define GLOBAL_root_gt                          (GLOBAL_optyap_data.root_global_trie)
-#define GLOBAL_root_tab_ent                     (GLOBAL_optyap_data.root_table_entry)
-#define GLOBAL_max_pages                        (GLOBAL_optyap_data.max_pages)
-#define GLOBAL_first_sg_fr                      (GLOBAL_optyap_data.first_subgoal_frame)
-#define GLOBAL_last_sg_fr                       (GLOBAL_optyap_data.last_subgoal_frame)
-#define GLOBAL_check_sg_fr                      (GLOBAL_optyap_data.check_subgoal_frame)
-#define GLOBAL_root_dep_fr                      (GLOBAL_optyap_data.root_dependency_frame)
-#define GLOBAL_th_dep_fr(wid)                   (GLOBAL_optyap_data.threads_dependency_frame[wid])
-#define GLOBAL_table_var_enumerator(index)      (GLOBAL_optyap_data.table_var_enumerator[index])
-#define GLOBAL_table_var_enumerator_addr(index) (GLOBAL_optyap_data.table_var_enumerator + (index))
-#define GLOBAL_trie_locks(index)                (GLOBAL_optyap_data.trie_locks[index])
-#define GLOBAL_timestamp                        (GLOBAL_optyap_data.timestamp)
+#endif
+  int worker_pid[MAX_WORKERS];
+#ifdef YAPOR_TEAMS
+  lockvar lock_worker_pid;
+  int worker_pid_counter;
+#endif
+  int global_number_workers;
+  struct global_optyap_data global_optyap_data_[20];
+  struct comm_optyap_data   comm_optyap_data_[20];
+
+};
+#endif
+
+#ifdef YAPOR_TEAMS
+
+#ifdef YAPOR_MPI
+#define R_COMM_mpi_comm(cid)                     (GLOBAL_optyap_team_data.comm_optyap_data_[cid].mpi_comm)
+#define R_COMM_query_has_results(cid)            (GLOBAL_optyap_team_data.comm_optyap_data_[cid].query_has_results)
+
+#endif
+
+#define R_COMM_finished(cid)                       (GLOBAL_optyap_team_data.comm_optyap_data_[cid].finished)
+#define R_COMM_root_cp(cid)		         (GLOBAL_optyap_team_data.comm_optyap_data_[cid].root_choice_point)
+#define R_COMM_bm_idle_teams(cid)		         (GLOBAL_optyap_team_data.comm_optyap_data_[cid].idle_teams)
+#define R_COMM_bm_present_teams(cid)		 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].present_teams)
+#define R_COMM_bm_finished_teams(cid)		 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].finished_teams)
+#define R_COMM_bm_running_teams(cid)		 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].running_teams)
+#define R_COMM_locks_bm_idle_teams(cid)            (GLOBAL_optyap_team_data.comm_optyap_data_[cid].lock_idle_teams)
+#define R_COMM_locks_bm_present_teams(cid)         (GLOBAL_optyap_team_data.comm_optyap_data_[cid].lock_present_teams)
+#define R_COMM_locks_bm_finished_teams(cid)  	 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].lock_finished_teams)
+#define R_COMM_locks_bm_running_teams(cid)  	 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].lock_running_teams)
+#define R_COMM_translation_array(cid,index)      	 (GLOBAL_optyap_team_data.comm_optyap_data_[cid].translation_array[index])
+#define R_COMM_number_teams(cid)                   (GLOBAL_optyap_team_data.comm_optyap_data_[cid].number_teams)
+
+#define COMM_finished                            (COMM1->finished)
+#define COMM_root_cp		                 (COMM1->root_choice_point)
+#define COMM_bm_idle_teams		         (COMM1->idle_teams)
+#define COMM_bm_present_teams		         (COMM1->present_teams)
+#define COMM_bm_finished_teams		         (COMM1->finished_teams)
+#define COMM_bm_running_teams		         (COMM1->running_teams)
+#define COMM_locks_bm_idle_teams                 (COMM1->lock_idle_teams)
+#define COMM_locks_bm_present_teams              (COMM1->lock_present_teams)
+#define COMM_locks_bm_finished_teams  	         (COMM1->lock_finished_teams)
+#define COMM_locks_bm_running_teams  	         (COMM1->lock_running_teams)
+#define COMM_translation_array(index)      	 (COMM1->translation_array[index])
+#define COMM_number_teams                        (COMM1->number_teams)
+
+#define  GLOBAL_AUX(tid)                         (GLOBAL_optyap_team_data.global_optyap_data_[tid].aux)
+
+#define  GLOBAL_lock_free_workers               (OPT->lock_free_workers)
+#define  GLOBAL_bm_free_workers                 (OPT->free_workers)
+#define  GLOBAL_lock_team(tid)                  (GLOBAL_optyap_team_data.global_optyap_data_[tid].lock_team)
+#define  GLOBAL_team_reply_signal(tid)		(GLOBAL_optyap_team_data.global_optyap_data_[tid].team_reply_signal)
+#define  GLOBAL_team_array(tid,index)           (GLOBAL_optyap_team_data.global_optyap_data_[tid].array[index])
+#define  GLOBAL_lock_share_team_request(tid)	(GLOBAL_optyap_team_data.global_optyap_data_[tid].lock_share_team_request)
+#define  GLOBAL_share_team_request(tid)		(GLOBAL_optyap_team_data.global_optyap_data_[tid].share_team_request)
+#define  GLOBAL_counter_comms			(GLOBAL_optyap_team_data.counter_comms)
+#define  GLOBAL_comm_rank(tid)                  (GLOBAL_optyap_team_data.global_optyap_data_[tid].comm_rank_)
+#define  GLOBAL_flag(tid)                       (GLOBAL_optyap_team_data.global_optyap_data_[tid].flag)
+#define  GLOBAL_comm_number(tid)                (GLOBAL_optyap_team_data.global_optyap_data_[tid].comm_number)
+
+#ifdef YAPOR_MPI
+#define  GLOBAL_mpi_active                      (GLOBAL_optyap_team_data.mpi_active)
+#define  GLOBAL_mpi_load(index)                 (OPT->mpi_load[index])
+#endif
+
+#define  GLOBAL_local_id(index)                 (GLOBAL_optyap_team_data.local_id[index])
+#define  GLOBAL_team_area_pointer(index)        (GLOBAL_optyap_team_data.team_area_pointer[index])
+#define  GLOBAL_counter_teams			(GLOBAL_optyap_team_data.counter_teams)
+#define  GLOBAL_mapfile_path			(GLOBAL_optyap_team_data.mapfile_path)
+#define  GLOBAL_allocated_memory	        (GLOBAL_optyap_team_data.allocated_memory)
+#define  GLOBAL_stacks_area	                (GLOBAL_optyap_team_data.stacks_area)
+#define  GLOBAL_bm_present_team_workers	        (OPT->present_team_workers)
+#define  GLOBAL_start_area	        	(OPT->my_team_area_pointer)
+#define  GLOBAL_locks_bm_present_team_workers   (OPT->locks.bitmap_present_team_workers)
+#define  GLOBAL_data_base_key(tid)	        (GLOBAL_optyap_team_data.global_optyap_data_[tid].data_base_key)
+#define  GLOBAL_team_not_alone(tid)             (GLOBAL_optyap_team_data.global_optyap_data_[tid].team_not_alone)
+#endif
+
+#define GLOBAL_pages_alloc                      (OPT->pages.alloc_pages)
+#define GLOBAL_pages_void                       (OPT->pages.void_pages)
+#define GLOBAL_pages_tab_ent                    (OPT->pages.table_entry_pages)
+#define GLOBAL_pages_sg_ent                     (OPT->pages.subgoal_entry_pages)
+#define GLOBAL_pages_sg_fr                      (OPT->pages.subgoal_frame_pages)
+#define GLOBAL_pages_dep_fr                     (OPT->pages.dependency_frame_pages)
+#define GLOBAL_pages_sg_node                    (OPT->pages.subgoal_trie_node_pages)
+#define GLOBAL_pages_sg_hash                    (OPT->pages.subgoal_trie_hash_pages)
+#define GLOBAL_pages_ans_node                   (OPT->pages.answer_trie_node_pages)
+#define GLOBAL_pages_ans_hash                   (OPT->pages.answer_trie_hash_pages)
+#define GLOBAL_pages_ans_ref_node               (OPT->pages.answer_ref_node_pages)
+#define GLOBAL_pages_gt_node                    (OPT->pages.global_trie_node_pages)
+#define GLOBAL_pages_gt_hash                    (OPT->pages.global_trie_hash_pages)
+#define GLOBAL_pages_or_fr                      (OPT->pages.or_frame_pages)
+#define GLOBAL_pages_qg_sol_fr                  (OPT->pages.query_goal_solution_frame_pages)
+#define GLOBAL_pages_qg_ans_fr                  (OPT->pages.query_goal_answer_frame_pages)
+#define GLOBAL_pages_susp_fr                    (OPT->pages.suspension_frame_pages)
+#define GLOBAL_pages_tg_sol_fr                  (OPT->pages.table_subgoal_solution_frame_pages)
+#define GLOBAL_pages_tg_ans_fr                  (OPT->pages.table_subgoal_answer_frame_pages)
+#define GLOBAL_scheduler_loop                   (OPT->scheduler_loop)
+#define GLOBAL_delayed_release_load             (OPT->delayed_release_load)
+#define GLOBAL_number_workers                   (OPT->number_workers)
+#define GLOBAL_worker_pid(worker)               (GLOBAL_optyap_team_data.worker_pid[worker])
+#ifdef YAPOR_TEAMS
+#define GLOBAL_worker_pid_counter               (GLOBAL_optyap_team_data.worker_pid_counter)
+#define GLOBAL_lock_worker_pid                  (GLOBAL_optyap_team_data.lock_worker_pid)
+#endif
+#define GLOBAL_master_worker                    (OPT->master_worker)
+#define GLOBAL_execution_time                   (OPT->execution_time)
+#ifdef YAPOR_THREADS
+#define Get_GLOBAL_root_cp()	                offset_to_cptr(OPT->root_choice_point_offset)
+#define Set_GLOBAL_root_cp(bptr)                (OPT->root_choice_point_offset = cptr_to_offset(bptr))
+#else
+#define GLOBAL_root_cp                          (OPT->root_choice_point)
+#define Get_GLOBAL_root_cp()                    (OPT->root_choice_point)
+#define Set_GLOBAL_root_cp(bptr)                (OPT->root_choice_point = (bptr))
+#endif
+#define GLOBAL_root_or_fr                       (OPT->root_or_frame)
+#define GLOBAL_bm_present_workers               (OPT->present_workers)
+#define GLOBAL_bm_idle_workers                  (OPT->idle_workers)
+#define GLOBAL_bm_root_cp_workers               (OPT->root_cp_workers)
+#define GLOBAL_bm_invisible_workers             (OPT->invisible_workers)
+#define GLOBAL_bm_requestable_workers           (OPT->requestable_workers)
+#define GLOBAL_bm_finished_workers              (OPT->finished_workers)
+#define GLOBAL_bm_pruning_workers               (OPT->pruning_workers)
+#define GLOBAL_locks_bm_idle_workers            (OPT->locks.bitmap_idle_workers)
+#define GLOBAL_locks_bm_root_cp_workers         (OPT->locks.bitmap_root_cp_workers)
+#define GLOBAL_locks_bm_invisible_workers       (OPT->locks.bitmap_invisible_workers)
+#define GLOBAL_locks_bm_requestable_workers     (OPT->locks.bitmap_requestable_workers)
+#define GLOBAL_locks_bm_finished_workers        (OPT->locks.bitmap_finished_workers)
+#define GLOBAL_locks_bm_pruning_workers         (OPT->locks.bitmap_pruning_workers)
+#define GLOBAL_locks_who_locked_heap            (OPT->locks.who_locked_heap)
+#define GLOBAL_locks_heap_access                (OPT->locks.heap_access)
+#define GLOBAL_locks_alloc_block                (OPT->locks.alloc_block)
+#define GLOBAL_branch(worker, depth)            (OPT->branch[worker][depth])
+#define GLOBAL_parallel_mode                    (OPT->parallel_mode)
+#define GLOBAL_root_gt                          (OPT->root_global_trie)
+#define GLOBAL_root_tab_ent                     (OPT->root_table_entry)
+#define GLOBAL_max_pages                        (OPT->max_pages)
+#define GLOBAL_first_sg_fr                      (OPT->first_subgoal_frame)
+#define GLOBAL_last_sg_fr                       (OPT->last_subgoal_frame)
+#define GLOBAL_check_sg_fr                      (OPT->check_subgoal_frame)
+#define GLOBAL_root_dep_fr                      (OPT->root_dependency_frame)
+#define GLOBAL_th_dep_fr(wid)                   (OPT->threads_dependency_frame[wid])
+#define GLOBAL_table_var_enumerator(index)      (OPT->table_var_enumerator[index])
+#define GLOBAL_table_var_enumerator_addr(index) (OPT->table_var_enumerator + (index))
+#define GLOBAL_trie_locks(index)                (OPT->trie_locks[index])
+#define GLOBAL_timestamp                        (OPT->timestamp)
 
 
 
@@ -415,6 +560,10 @@ struct global_optyap_data {
 ********************************/
 
 struct local_optyap_data {
+
+#ifdef YAPOR_TEAMS
+int is_team_share;
+#endif
 #if defined(TABLING) && (defined(YAPOR) || defined(THREADS))
   /* local data related to memory management */
   struct local_pages pages;
@@ -469,6 +618,10 @@ struct local_optyap_data {
   ma_hash_entry ma_hash_table[MAVARS_HASH_SIZE];
 #endif /* (TABLING || !YAPOR_COW) && MULTI_ASSIGNMENT_VARIABLES */
 };
+
+#ifdef YAPOR_TEAMS
+#define LOCAL_is_team_share                (LOCAL_optyap_data.is_team_share)
+#endif
 
 #define LOCAL_pages_void                   (LOCAL_optyap_data.pages.void_pages)
 #define LOCAL_pages_tab_ent                (LOCAL_optyap_data.pages.table_entry_pages)

@@ -101,13 +101,16 @@ Yap_PutInSlot(Int slot, Term t USES_REGS)
 static inline Int
 Yap_NewSlots(int n USES_REGS)
 {
+  //printf("%d NEW SLOTS %d %d\n",getpid(),n,IntOfTerm(ASP[0]));
   Int old_slots = IntOfTerm(ASP[0]), oldn = n;
   while (n > 0) {
     RESET_VARIABLE(ASP);
     ASP--;
     n--;
   }
+  //printf("BEFORE %d\n",IntOfTerm(ASP[old_slots+oldn+1]));
   ASP[old_slots+oldn+1] = ASP[0] = MkIntTerm(old_slots+oldn);
+  //printf("AFTER\n");
   return((ASP+1)-LCL0);
 }
 

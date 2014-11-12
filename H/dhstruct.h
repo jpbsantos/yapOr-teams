@@ -9,7 +9,12 @@
 
 
 
-
+#ifdef YAPOR_TEAMS
+#define PredInvalidwork Yap_heap_regs->pred_invalidwork
+#define INVALIDWORK Yap_heap_regs->invalidwork_code
+#define PredMPIStart Yap_heap_regs->pred_mpistart
+#define MPISTART Yap_heap_regs->mpistart_code
+#endif
 
 
 

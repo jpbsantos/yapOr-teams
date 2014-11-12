@@ -2707,7 +2707,24 @@ Yap_absmi(int inp)
 
 #ifdef YAPOR
     shared_fail:
+#ifdef YAPOR_TEAMS
+      if(LOCAL_is_team_share == 1){
+        //ATENCAO ATENCAO ATENCAO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        //B = LOCAL_start_local_copy;
+        //int *a=NULL;
+        printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT   (%d,%d)  TEAM SHARE   \n",comm_rank,worker_id);
+        //sleep(30);
+        LOCAL_is_team_share = 2;
+      }
+      else{
+        B = Get_LOCAL_top_cp();
+        if(LOCAL_is_team_share == 55)
+          printf("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN   (%d,%d)  NORMAL SHARE %p \n",comm_rank,worker_id, B);
+        LOCAL_is_team_share = 2;
+      }
+#else
       B = Get_LOCAL_top_cp();
+#endif
       SET_BB(PROTECT_FROZEN_B(B));
       goto fail;
 #endif	/* YAPOR */
@@ -2741,6 +2758,8 @@ Yap_absmi(int inp)
       failloop:
 	if (pt0 == S_TR) {
 	  SP = SP0;
+//if(LOCAL_is_team_share == 2)
+//        printf("FAIL  LOOP (%d,%d)  TEAM SHARE %p \n",team_id,worker_id, B);
 #ifdef LOW_LEVEL_TRACER
 	  if (Yap_do_low_level_trace) {
 	    int go_on = TRUE;
@@ -2873,6 +2892,8 @@ Yap_absmi(int inp)
 	    } else
 #endif /* FROZEN_STACKS */
 	  RESTORE_TR();
+//if(LOCAL_is_team_share == 2)
+//        printf("888888 FAIL 2 LOOP (%d,%d)  TEAM SHARE %p  %p  %p\n",team_id,worker_id, PREG, B->cp_ap,B);
 	  GONext();
 	}
 	BEGD(d1);

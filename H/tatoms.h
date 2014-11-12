@@ -2,6 +2,12 @@
   /* This file, tatoms.h, was generated automatically by "yap -L misc/buildatoms"
      please do not update, update misc/ATOMS instead */
 
+#ifdef YAPOR_TEAMS
+  Atom AtomInvalidwork_;
+  #define AtomInvalidwork Yap_heap_regs->AtomInvalidwork_
+  Atom AtomMPIStart_;
+  #define AtomMPIStart Yap_heap_regs->AtomMPIStart_
+#endif
   Atom Atom3Dots_;
 #define Atom3Dots Yap_heap_regs->Atom3Dots_
   Atom AtomAbol_;

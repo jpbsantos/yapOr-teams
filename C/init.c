@@ -848,14 +848,19 @@ InitStdPreds(void)
   void initIO(void);
 
   Yap_InitCPreds();
+
   Yap_InitBackCPreds();
+
   BACKUP_MACHINE_REGS();
+
   Yap_InitYaamRegs( 0 );
 
 #if HAVE_MPE
   Yap_InitMPE ();
 #endif
+
   initIO();
+
 }
 
 static void
@@ -1074,6 +1079,25 @@ void Yap_init_yapor_workers(void) {
     } else
       GLOBAL_worker_pid(proc) = son;
   }
+
+
+
+#ifdef YAPOR_MPI
+   printf(" SLAVE \n");
+#include "mpi.h" 
+   MPI_Comm parent; 
+   MPI_Init(NULL, NULL); 
+   MPI_Comm_get_parent(&parent); 
+   if (parent != MPI_COMM_NULL){
+      //GLOBAL_mpi_active = 1;
+      CurrentModule = USER_MODULE;
+      GLOBAL_parallel_mode = PARALLEL_MODE_ON;
+      P = MPISTART;
+      Yap_exec_absmi(FALSE);
+      Yap_Error(INTERNAL_ERROR, TermNil, "abstract machine unexpected exit (YAP_Init)");
+   }     
+#endif
+printf("_____________________  (%d)  %p ----------------------- \n",worker_id,B);
 }
 #endif /* YAPOR */
 
@@ -1186,6 +1210,11 @@ InitCodes(void)
   Yap_heap_regs->getwork_seq_code->u.Otapl.p = RepPredProp(PredPropByAtom(AtomGetworkSeq, PROLOG_MODULE));
 #endif /* YAPOR */
 
+#ifdef YAPOR_TEAMS
+Yap_heap_regs->invalidwork_code->u.Otapl.p = RepPredProp(PredPropByAtom(AtomInvalidwork, PROLOG_MODULE));
+Yap_heap_regs->mpistart_code->u.Otapl.p = RepPredProp(PredPropByAtom(AtomMPIStart, PROLOG_MODULE));
+#endif
+
 }
 
 
@@ -1225,6 +1254,9 @@ Yap_InitWorkspace(UInt Heap, UInt Stack, UInt Trail, UInt Atts, UInt max_table_s
 #endif /* THREADS */
 #if defined(YAPOR_COPY) || defined(YAPOR_COW) || defined(YAPOR_SBA)
   LOCAL = REMOTE(0);
+#ifdef YAPOR_TEAMS
+  OPT = &GLOBAL_optyap_team_data.global_optyap_data_[0];
+#endif
 #endif /* YAPOR_COPY || YAPOR_COW || YAPOR_SBA */
   if (Heap < MinHeapSpace)
     Heap = MinHeapSpace;
@@ -1266,7 +1298,9 @@ Yap_InitWorkspace(UInt Heap, UInt Stack, UInt Trail, UInt Atts, UInt max_table_s
   Yap_InitMemory(Trail, Heap, Stack+Atts);
 #endif
 #if defined(YAPOR) || defined(TABLING)
+
   Yap_init_global_optyap_data(max_table_size, n_workers, sch_loop, delay_load);
+
 #endif /* YAPOR || TABLING */
 
   Yap_AttsSize = Atts;
@@ -1312,6 +1346,7 @@ Yap_InitWorkspace(UInt Heap, UInt Stack, UInt Trail, UInt Atts, UInt max_table_s
   GLOBAL_AllowTrailExpansion = TRUE;
   Yap_InitExStacks (0, Trail, Stack);
   InitStdPreds();
+  
   /* make sure tmp area is available */
   {
     Yap_ReleasePreAllocCodeSpace(Yap_PreAllocCodeSpace());

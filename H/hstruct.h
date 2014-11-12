@@ -11,7 +11,12 @@
 
 
 
-
+#ifdef YAPOR_TEAMS
+struct pred_entry  *pred_invalidwork;
+ yamop  invalidwork_code[1];
+struct pred_entry  *pred_mpistart;
+ yamop  mpistart_code[1];
+#endif
 
 
 

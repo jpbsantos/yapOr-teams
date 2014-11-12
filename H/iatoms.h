@@ -1,7 +1,10 @@
 
   /* This file, iatoms.h, was generated automatically by "yap -L misc/buildatoms"
      please do not update, update misc/ATOMS instead */
-
+#ifdef YAPOR_TEAMS
+AtomInvalidwork = Yap_FullLookupAtom("$invalidwork");
+AtomMPIStart = Yap_FullLookupAtom("$mpistart");
+#endif
   Atom3Dots = Yap_LookupAtom("...");
   AtomAbol = Yap_FullLookupAtom("$abol");
   AtomAccess = Yap_LookupAtom("access");

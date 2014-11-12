@@ -714,7 +714,12 @@ extern struct worker_local *Yap_local[MAX_THREADS];
 #define REMOTE(wid)        (Yap_local[wid])
 #elif defined(YAPOR)
 extern struct worker_local *Yap_local;
+#ifdef YAPOR_TEAMS
+#define REMOTE(wid)          (Yap_local + GLOBAL_local_id(team_id) + wid)
+#define REMOTE_TEAM(tid,wid) (Yap_local + GLOBAL_local_id(tid) + wid)
+#else
 #define REMOTE(wid)        (Yap_local + wid)
+#endif
 #else /* !THREADS && !YAPOR */
 extern struct worker_local Yap_local;
 #define REMOTE(wid)        (&Yap_local)

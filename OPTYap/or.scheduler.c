@@ -122,6 +122,7 @@ void move_up_to_prune_request(void) {
 ** -------------------------- */
 
 int get_work(void) {
+      //printf("(%d,%d)____________________________________________________SCEDULLER %d\n",team_id,worker_id,GLOBAL_bm_root_cp_workers); 
   CACHE_REGS
   int counter;
   bitmap stable_busy;
@@ -196,7 +197,9 @@ int get_work(void) {
   
   counter = 0;
   BITMAP_difference(stable_busy, OrFr_members(LOCAL_top_or_fr), GLOBAL_bm_idle_workers);
-   while (1) {
+  //printf("(%d,%d)____________________________________________________SCEDULLER %d   (%d)\n",comm_rank,worker_id,GLOBAL_bm_root_cp_workers,GLOBAL_bm_idle_workers);  
+   while (1) {    
+
     while (BITMAP_subset(GLOBAL_bm_idle_workers, OrFr_members(LOCAL_top_or_fr)) &&
            Get_LOCAL_top_cp() != Get_GLOBAL_root_cp()) {
       /* no busy workers here and below */
@@ -206,7 +209,8 @@ int get_work(void) {
       }
     }
     if (Get_LOCAL_top_cp() == Get_GLOBAL_root_cp()) {
-      if (! BITMAP_member(GLOBAL_bm_root_cp_workers, worker_id))
+      //printf("(%d,%d) root cp %d ---- %d present\n",comm_rank,worker_id,GLOBAL_bm_root_cp_workers, GLOBAL_bm_present_workers);
+      if (! BITMAP_member(GLOBAL_bm_root_cp_workers, worker_id)){
         /* We need this extra bitmap because the GLOBAL_bm_idle_workers bitmap 
            is not enough to deal with sequential predicates. The condition of
            all workers being idle is not sufficient to ensure that there is no 
@@ -214,10 +218,14 @@ int get_work(void) {
            Only when all workers are idle and in the root choicepoint it is safe to
            finish execution. */
         PUT_IN_ROOT_NODE(worker_id);
-      if (BITMAP_same(GLOBAL_bm_root_cp_workers, GLOBAL_bm_present_workers))
+        //printf("ROOT (%d,%d)____________________________________________________SCEDULLER %d\n",team_id,worker_id,GLOBAL_bm_root_cp_workers);  
+       }
+      if (BITMAP_same(GLOBAL_bm_root_cp_workers, GLOBAL_bm_present_workers)){
         /* All workers are idle in the root choicepoint. Execution 
            must finish as there is no available computation. */
+        //printf("OUT root cp %d ---- %d present\n",GLOBAL_bm_root_cp_workers, GLOBAL_bm_present_workers);
         return FALSE;
+      }
     }
     if (get_work_below()) {
       PUT_BUSY(worker_id);
@@ -264,6 +272,8 @@ int move_up_one_node(or_fr_ptr nearest_livenode) {
     return FALSE;
   }
 
+
+
   /* pending prune ? */
   if (Get_OrFr_pend_prune_cp(LOCAL_top_or_fr) 
       && ! Get_LOCAL_prune_request()
@@ -287,6 +297,7 @@ int move_up_one_node(or_fr_ptr nearest_livenode) {
   OPTYAP_ERROR_CHECKING(move_up_one_node, B_FZ != DepFr_cons_cp(LOCAL_top_dep_fr));
   OPTYAP_ERROR_CHECKING(move_up_one_node, LOCAL_top_susp_or_fr && EQUAL_OR_YOUNGER_CP(Get_LOCAL_top_cp(), B_FZ) && YOUNGER_CP(GetOrFr_node(LOCAL_top_susp_or_fr), Get_LOCAL_top_cp()));
   OPTYAP_ERROR_CHECKING(move_up_one_node, LOCAL_top_susp_or_fr && YOUNGER_CP(B_FZ, Get_LOCAL_top_cp()) && YOUNGER_CP(GetOrFr_node(LOCAL_top_susp_or_fr), B_FZ));
+
 
 #ifdef TABLING
   /* frozen stacks on branch ? */
@@ -326,7 +337,6 @@ int move_up_one_node(or_fr_ptr nearest_livenode) {
       pruning_over_tabling_data_structures();
     return TRUE;
   }
-
   /* suspension frames to resume ? */
   if (OrFr_suspensions(LOCAL_top_or_fr)) {
     susp_fr_ptr resume_fr;
@@ -528,7 +538,7 @@ int get_work_below(void){
       worker_p = i;
       big_load = REMOTE_load(i);
     }
-  }
+  }  
   if (worker_p == -1) 
     return FALSE;
   return (q_share_work(worker_p));
@@ -541,6 +551,8 @@ int get_work_above(void){
   int i, worker_p, big_load;
   bitmap visible_busy_above, visible_idle_above;
 
+
+
   worker_p = -1; 
   big_load = GLOBAL_delayed_release_load ;
   BITMAP_difference(visible_busy_above, GLOBAL_bm_present_workers, OrFr_members(LOCAL_top_or_fr));
@@ -549,6 +561,7 @@ int get_work_above(void){
   BITMAP_minus(visible_busy_above, GLOBAL_bm_idle_workers);
   BITMAP_and(visible_idle_above, GLOBAL_bm_idle_workers);
   BITMAP_insert(visible_busy_above, worker_id);
+
   for (i = 0 ; i < GLOBAL_number_workers; i++) {
     if (BITMAP_member(visible_idle_above, i))
       BITMAP_minus(visible_busy_above, OrFr_members(REMOTE_top_or_fr(i)));
@@ -575,12 +588,14 @@ int get_work_above(void){
   BITMAP_insert(GLOBAL_bm_invisible_workers, worker_p);
   UNLOCK(GLOBAL_locks_bm_invisible_workers);
   /* move up to cp with worker_p */
+
   do {
     if (! move_up_one_node(NULL)) {
       return TRUE;
     }
   } while (! BITMAP_member(OrFr_members(LOCAL_top_or_fr), worker_p));
   /* put workers visibles */
+
   LOCK(GLOBAL_locks_bm_invisible_workers);
   BITMAP_delete(GLOBAL_bm_invisible_workers, worker_id);
   BITMAP_delete(GLOBAL_bm_invisible_workers, worker_p);

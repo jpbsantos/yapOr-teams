@@ -7,6 +7,10 @@
 // This is supported by YAP directly
 // A Dot			N	"."
 //
+#ifdef YAPOR_TEAMS
+A	Invalidwork		F	"$invalidwork"
+A	MPISatrt		F	"$mpistart"
+#endif
 A	3Dots			N	"..."
 A	Abol			F	"$abol"
 A	Access			N	"access"

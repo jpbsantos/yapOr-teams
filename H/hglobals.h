@@ -50,7 +50,11 @@ typedef struct global_data {
   lockvar  BGL_;
 #endif
 #if defined(YAPOR) || defined(TABLING)
+#ifdef YAPOR_TEAMS
+  struct global_optyap_team_data  optyap_team_data_;
+#else
   struct global_optyap_data  optyap_data_;
+#endif
 #endif /* YAPOR || TABLING */
 
   int  PrologShouldHandleInterrupts_;

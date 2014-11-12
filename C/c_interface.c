@@ -2495,15 +2495,19 @@ YAP_LeaveGoal(int backtrack, YAP_dogoalinfo *dgi)
 X_API Int
 YAP_RunGoal(Term t)
 {
+  //printf("DEntro do RUn goal %d\n",IntOfTerm(ASP[0]));
   CACHE_REGS
   Term out;
   yamop *old_CP = CP;
   Int CurSlot = LOCAL_CurSlot;
   BACKUP_MACHINE_REGS();
+  //printf("A DEntro do RUn goal %d\n",IntOfTerm(ASP[0]));
 
   LOCAL_AllowRestart = FALSE;
   LOCAL_PrologMode = UserMode;
+   // printf("DEntro do RUn goal ------- (-) 1\n");
   out = Yap_RunTopGoal(t);
+  //printf("DEntro do RUn goal ------- 1\n");
   LOCAL_PrologMode = UserCCallMode;
   if (out) {
     P = (yamop *)ENV[E_CP];
@@ -2511,7 +2515,9 @@ YAP_RunGoal(Term t)
     CP = old_CP;
     LOCAL_AllowRestart = TRUE;
     // we are back to user code again, need slots */
+    //printf("A DEntro do RUn goal %d\n",IntOfTerm(ASP[0]));
     Yap_StartSlots( PASS_REGS1 );
+    //printf("B DEntro do RUn goal %d\n",IntOfTerm(ASP[0]));
   } else {
     ENV = B->cp_env;
     ENV = (CELL *)ENV[E_E];
@@ -2521,7 +2527,10 @@ YAP_RunGoal(Term t)
     ASP = ENV;
     LOCAL_CurSlot = CurSlot;
   }
+  //printf("DEntro do RUn goal ------- 2\n");
   RECOVER_MACHINE_REGS();
+  //printf("DEntro do RUn goal ------- 3\n");
+  //printf("FIM DEntro do RUn goal %d\n",IntOfTerm(ASP[0]));
   return out;
 }
 

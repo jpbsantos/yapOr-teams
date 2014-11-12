@@ -102,13 +102,17 @@ void Yap_init_yapor_stacks_memory(UInt TrailStackArea, UInt HeapStackArea, UInt 
   GlobalLocalStackArea = ADJUST_SIZE_TO_PAGE(GlobalLocalStackArea); 
   Yap_worker_area_size = GlobalLocalStackArea + TrailStackArea;
 #if defined(YAPOR_COPY) || defined(YAPOR_SBA)
-  StacksArea = HeapStackArea + Yap_worker_area_size * n_workers;
+  //StacksArea = HeapStackArea + Yap_worker_area_size * n_workers;
+  // YAPOR_TEAMS hack
+  StacksArea = HeapStackArea + Yap_worker_area_size * 33;
 #elif defined(YAPOR_COW)
   StacksArea = HeapStackArea;
 #endif /* YAPOR_COPY || YAPOR_SBA || YAPOR_COW */
 
   Yap_HeapBase = (ADDR) MMAP_ADDR;
   LOCAL_GlobalBase = (ADDR) (MMAP_ADDR + HeapStackArea);
+
+  //printf(" LOCAL_GlobalBase  %p\n",LOCAL_GlobalBase);
 
 #ifdef MMAP_MEMORY_MAPPING_SCHEME
   /* map stacks in a single go */
@@ -159,6 +163,11 @@ void Yap_init_yapor_stacks_memory(UInt TrailStackArea, UInt HeapStackArea, UInt 
   sba_end = (int)binding_array + sba_size;
 #endif /* YAPOR_SBA */
 
+#ifdef YAPOR_TEAMS
+  strcpy(GLOBAL_mapfile_path,mapfile_path);
+  GLOBAL_allocated_memory = GLOBAL_LOCAL_STRUCTS_AREA + StacksArea;
+  GLOBAL_stacks_area = HeapStackArea;
+#endif
   LOCAL_TrailBase = LOCAL_GlobalBase + GlobalLocalStackArea;
   LOCAL_LocalBase = LOCAL_TrailBase - CellSize;
   LOCAL_TrailTop = LOCAL_TrailBase + TrailStackArea;
@@ -179,10 +188,13 @@ void Yap_remap_yapor_memory(void) {
     Yap_Error(FATAL_ERROR, TermNil, "open error (Yap_remap_yapor_memory)");
   if (munmap(remap_addr, (size_t)(Yap_worker_area_size * GLOBAL_number_workers)) == -1)
     Yap_Error(FATAL_ERROR, TermNil, "munmap error (Yap_remap_yapor_memory)");
-  for (i = 0; i < GLOBAL_number_workers; i++)
+#ifndef YAPOR_TEAMS
+  for (i = 0; i < GLOBAL_number_workers; i++){
+   // printf("ssss --- (%d,%d) ##### %d  worker %p ---- %p \n",team_id,worker_id,i,remap_addr + worker_offset(i),remap_offset + i * Yap_worker_area_size);
     if (mmap(remap_addr + worker_offset(i), (size_t)Yap_worker_area_size, PROT_READ|PROT_WRITE, 
-             MAP_SHARED|MAP_FIXED, fd_mapfile, remap_offset + i * Yap_worker_area_size) == (void *) -1)
-      Yap_Error(FATAL_ERROR, TermNil, "mmap error (Yap_remap_yapor_memory)");
+             MAP_SHARED|MAP_FIXED, fd_mapfile, remap_offset + i * Yap_worker_area_size) == (void *) -1)  
+      Yap_Error(FATAL_ERROR, TermNil, "mmap error (Yap_remap_yapor_memory)");}
+#endif
   if (close(fd_mapfile) == -1)
     Yap_Error(FATAL_ERROR, TermNil, "close error (Yap_remap_yapor_memory)");
 #else /* SHM_MEMORY_MAPPING_SCHEME */
@@ -207,6 +219,15 @@ void Yap_unmap_yapor_memory (void) {
   int i;
 
   INFORMATION_MESSAGE("Worker %d exiting...", worker_id);
+#ifdef YAPOR_TEAMS
+  for (i = 1; i < GLOBAL_worker_pid_counter; i++){
+      //printf("%d\n",GLOBAL_worker_pid(i));
+      if (kill(GLOBAL_worker_pid(i), SIGKILL) != 0)
+        INFORMATION_MESSAGE("Can't kill process %d", GLOBAL_worker_pid(i));
+      else 
+        INFORMATION_MESSAGE("Killing process %d", GLOBAL_worker_pid(i));
+  }
+#else
   for (i = 0; i < GLOBAL_number_workers; i++)
     if (i != worker_id && GLOBAL_worker_pid(i) != 0) {
       if (kill(GLOBAL_worker_pid(i), SIGKILL) != 0)
@@ -214,6 +235,7 @@ void Yap_unmap_yapor_memory (void) {
       else 
         INFORMATION_MESSAGE("Killing process %d", GLOBAL_worker_pid(i));
     }
+#endif
 #ifdef YAPOR_COW
   if (GLOBAL_number_workers > 1) {
     if (kill(GLOBAL_master_worker, SIGINT) != 0)
@@ -264,5 +286,7 @@ void shm_unmap_memory(int id) {
     INFORMATION_MESSAGE("Can't remove shared memory segment %d", shm_mapid[id]);
   return;
 }
+
+
 #endif /* SHM_MEMORY_MAPPING_SCHEME */
 #endif /* YAPOR_COPY || YAPOR_COW || YAPOR_SBA */

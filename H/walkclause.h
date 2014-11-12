@@ -617,6 +617,10 @@
       /* instructions type Otapl */
     case _getwork:
     case _getwork_seq:
+#ifdef YAPOR_TEAMS
+    case _invalidwork:
+    case _mpistart:
+#endif
     case _sync:
       clause_code = FALSE;
       pp = pc->u.Otapl.p;

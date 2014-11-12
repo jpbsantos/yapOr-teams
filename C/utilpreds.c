@@ -1256,6 +1256,7 @@ Yap_ImportTerm(char * buf) {
   size_t sz = bc[1];
   Term tinp, tret;
   tinp = bc[2];
+  printf("CON_VERSOR %d\n",IsVarTerm(tinp));
   if (IsVarTerm(tinp))
     return MkVarTerm();
   else if (IsIntTerm(tinp))

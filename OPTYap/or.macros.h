@@ -107,8 +107,13 @@ static inline qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr, int);
 /* ----------------------- **
 **      Engine Macros      **
 ** ----------------------- */
-
+#ifdef YAPOR_TEAMS
+//#define worker_offset(X)	  ((GLOBAL_team_area_pointer(team_id) + (X * Yap_worker_area_size)) - (GLOBAL_team_area_pointer(team_id) + (worker_id * Yap_worker_area_size)))
+#define worker_offset(X)	  ((GLOBAL_start_area + (X * Yap_worker_area_size)) - (long) LOCAL_GlobalBase )
+#define out_worker_offset(tid,X)	  ((GLOBAL_team_area_pointer(tid) + (X * Yap_worker_area_size)) - (long) LOCAL_GlobalBase )
+#else
 #define worker_offset(X)	  ((GLOBAL_number_workers + X - worker_id) % GLOBAL_number_workers * Yap_worker_area_size)
+#endif
 
 #define LOCK_OR_FRAME(fr)      LOCK(OrFr_lock(fr))
 #define UNLOCK_OR_FRAME(fr)  UNLOCK(OrFr_lock(fr))
@@ -116,11 +121,16 @@ static inline qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr, int);
 #define LOCK_WORKER(w)        LOCK(REMOTE_lock(w))
 #define UNLOCK_WORKER(w)    UNLOCK(REMOTE_lock(w))
 
-
+#ifdef YAPOR_TEAMS
+#define LOCK_TEAM(w)        LOCK(GLOBAL_lock_team(w))
+#define UNLOCK_TEAM(w)      UNLOCK(GLOBAL_lock_team(w))
+#endif
 
 /* -------------------------- **
 **      Scheduler Macros      **
 ** -------------------------- */
+
+//else if (GLOBAL_comm_number(team_id) >= 0 && worker_id == 0 && team_get_work())
 
 #define SCH_top_shared_cp(CP)  (Get_LOCAL_top_cp() == CP)
 
@@ -129,6 +139,10 @@ static inline qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr, int);
 #define SCHEDULER_GET_WORK()          \
         if (get_work())               \
           goto shared_fail;           \
+        else if (worker_id == 0 && COMM_bm_present_teams > 1  && team_get_work())\
+          goto shared_fail;           \
+        else if(GLOBAL_mpi_active && worker_id == 0 && mpi_team_get_work())\
+          goto shared_fail;            \
         else                          \
           goto shared_end
 
@@ -145,6 +159,17 @@ static inline qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr, int);
           p_share_work();             \
 	  setregs();                  \
         }
+
+#ifdef YAPOR_TEAMS
+#define SCH_check_team_share_request()     \
+        if (worker_id == 0 && GLOBAL_share_team_request(team_id) != MAX_WORKERS) {  \
+          printf("check_team_share_request\n");\
+	  ASP = YENV;                 \
+	  saveregs();                 \
+          team_p_share_work();        \
+	  setregs();                  \
+        }
+#endif
 #else /* YAPOR_COW */
 #define SCH_check_share_request()     \
         if (SCH_any_share_request) {  \
@@ -152,10 +177,14 @@ static inline qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr, int);
             goto shared_fail;         \
         }
 #endif /* YAPOR_COPY || YAPOR_SBA || YAPOR_COW || YAPOR_THREADS */
-
+//MUDADO
 #define SCH_check_requests()          \
         SCH_check_prune_request();    \
+        SCH_check_team_share_request(); \
+        if (worker_id == 0)            \
+        SCH_check_messages();            \
         SCH_check_share_request()
+          
 
 #define SCH_last_alternative(curpc, CP_PTR)    \
         HR = HBREG = PROTECT_FROZEN_H(CP_PTR); \
@@ -238,6 +267,17 @@ void PUT_IN_FINISHED(int w) {
   return;
 }
 
+#ifdef YAPOR_TEAMS
+
+static inline 
+void PUT_OUT_FINISHED(int w) {
+  LOCK(GLOBAL_locks_bm_finished_workers);
+  BITMAP_delete(GLOBAL_bm_finished_workers, w);
+  UNLOCK(GLOBAL_locks_bm_finished_workers);
+  return;
+}
+
+#endif
 
 #ifdef TABLING_INNER_CUTS
 static inline 
@@ -605,3 +645,46 @@ qg_sol_fr_ptr CUT_prune_solution_frames(qg_sol_fr_ptr solutions, int ltt) {
   }
   return solutions;
 }
+
+#ifdef YAPOR_MPI
+#include "mpi.h"
+
+static inline
+void SCH_check_messages(void)  {
+ 
+ int count = 0;
+ int flag = 0;
+ MPI_Status status;
+ int msg[3];
+ //int msg;
+ MPI_Iprobe(MPI_ANY_SOURCE, 44, MPI_COMM_WORLD, &flag, &status );
+
+ while(flag && count <3){
+   MPI_Recv( &msg, 3, MPI_INT, MPI_ANY_SOURCE, 44, MPI_COMM_WORLD, &status );
+   printf("CHECK (%d) %d MENSAGEM: %d %d \n",comm_rank,getpid(),msg[0],msg[1]);
+   if(msg[0] == 1){
+      printf("PEDIDO (%d) \n",comm_rank);
+     int worker_q = msg[1];
+     msg[0] = 2;
+     msg[1] = comm_rank;
+     msg[2] = 7;
+     MPI_Send(&msg, 3, MPI_INT, worker_q, 44, MPI_COMM_WORLD);
+     GLOBAL_mpi_load(worker_q) = 0;
+     mpi_team_p_share_work(worker_q);
+   }
+   if(msg[0] == 4){
+    GLOBAL_mpi_load(msg[1]) = 1;
+   }
+   if(msg[0] == 5){
+    msg[0] = 5;
+    msg[1] = 1;
+    MPI_Send(&msg, 3, MPI_INT, 0, 44, MPI_COMM_WORLD);
+   }
+   MPI_Iprobe(MPI_ANY_SOURCE, 44, MPI_COMM_WORLD, &flag, &status );
+   count++;
+ }
+
+}
+
+
+#endif

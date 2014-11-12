@@ -50,7 +50,11 @@
 #define GLOBAL_BGL Yap_global->BGL_
 #endif
 #if defined(YAPOR) || defined(TABLING)
+#ifdef YAPOR_TEAMS
+#define GLOBAL_optyap_team_data Yap_global->optyap_team_data_
+#else
 #define GLOBAL_optyap_data Yap_global->optyap_data_
+#endif
 #endif /* YAPOR || TABLING */
 
 #define GLOBAL_PrologShouldHandleInterrupts Yap_global->PrologShouldHandleInterrupts_

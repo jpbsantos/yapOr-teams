@@ -14,7 +14,10 @@
 
 
 
-
+#ifdef YAPOR_TEAMS
+ InitOtaplInst(INVALIDWORK,_invalidwork,PredInvalidwork);
+ InitOtaplInst(MPISTART,_mpistart,PredMPIStart);
+#endif
 
 
 

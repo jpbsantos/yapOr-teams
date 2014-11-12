@@ -822,6 +822,10 @@ restore_opcodes(yamop *pc, yamop *max USES_REGS)
       /* instructions type Otapl */
     case _getwork:
     case _getwork_seq:
+#ifdef YAPOR_TEAMS
+    case _invalidwork:
+    case _mpistart:
+#endif
     case _sync:
       OrArgAdjust(pc->u.Otapl.or_arg);
       TabEntryAdjust(pc->u.Otapl.te);

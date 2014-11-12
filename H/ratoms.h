@@ -2,6 +2,10 @@
   /* This file, ratoms.h, was generated automatically by "yap -L misc/buildatoms"
      please do not update, update misc/ATOMS instead */
 
+#ifdef YAPOR_TEAMS
+  AtomInvalidwork = AtomAdjust(AtomInvalidwork);
+  AtomMPIStart = AtomAdjust(AtomMPIStart);
+#endif 
   Atom3Dots = AtomAdjust(Atom3Dots);
   AtomAbol = AtomAdjust(AtomAbol);
   AtomAccess = AtomAdjust(AtomAccess);

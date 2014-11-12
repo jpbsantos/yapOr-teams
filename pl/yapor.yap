@@ -114,7 +114,7 @@ parallel(Goal) :-
    ).
 
 '$parallel_query'(Goal) :-
-   '$c_yapor_start', 
+   '$c_yapor_start'(Results), 
    '$execute'(Goal),
    fail.
 '$parallel_query'(_).
@@ -125,21 +125,21 @@ parallel(Goal) :-
 %%                          parallel_findall/3                         %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-parallel_findall(Template,Goal,Answers) :- 
+parallel_findall(Template,Goal,Answers) :- writeln('------------------------------Yapor.yap'),
    parallel_mode(Mode), Mode = on, !,
    (
       '$parallel_findall_query'(Template,Goal)
    ;
       '$c_parallel_get_answers'(Refs),
-      '$parallel_findall_recorded'(Refs,Answers),     
+      '$parallel_findall_recorded'(Refs,Answers),
       eraseall(parallel_findall)
    ).
 parallel_findall(Template,Goal,Answers) :-
    findall(Template,Goal,Answers).
 
 '$parallel_findall_query'(Template,Goal) :-
-   '$c_yapor_start', 
-   '$execute'(Goal),
+   '$c_yapor_start'(Results), 
+   '$execute'(Goal), writeln(Goal),
    recordz(parallel_findall,Template,Ref),
    '$c_parallel_new_answer'(Ref),
    fail.
@@ -175,10 +175,138 @@ parallel_once(Goal) :-
    once(Goal).
 
 '$parallel_once_query'(Goal) :-
-   '$c_yapor_start', 
+   '$c_yapor_start'(Results), 
    '$execute'(once(Goal)),
     recordz(parallel_once,Goal,_),
     fail.
 '$parallel_once_query'(_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                         YAPOR_TEAM                                  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- dynamic yapor_team/2.
+
+%debug_joao:- '$c_parallel_new_answer'(Ref).
+
+%%%%% create_team %%%%%%%
+create_team(Nworkers,TeamName) :- 
+   '$c_create_team'(Nworkers,Id), 
+   assertz(yapor_team(TeamName,Id,1)), 
+   yapor_team(TeamName,A,1).
+
+%%%%% create_comm %%%%%%%
+create_comm(TeamList,ComName) :-
+    length(TeamList,Number_teams),
+   '$c_create_comm'(TeamList,Number_teams,CommId),
+    assertz(yapor_team(ComName,CommId)).
+
+
+%%%%% parallel %%%%%%%
+parallel(TeamName,Goal,Type) :-
+    yapor_team(TeamName,Id),
+   '$c_run_parallel_goal'(Goal,Id,Type).
+
+
+%%%%% parallel_barrier %%%%%%%
+
+parallel_barrier(TeamName):- 
+	yapor_team(TeamName,Id), 
+        '$c_parallel_barrier'(Id).
+%%%%% parallel_barrier %%%%%%%
+
+mpi_parallel_barrier(TeamName):- 
+	yapor_team(TeamName,Id), 
+        '$c_mpi_parallel_barrier'(Id).
+
+
+%%%%% parallel_barrier %%%%%%%
+
+results_barrier(TeamName):- 
+	yapor_team(TeamName,Id), 
+        '$c_results_barrier'(Id).
+
+%%%%% mpi_get_results %%%%%%%
+mpi_get_results(TeamName,Answers) :-
+    yapor_team(TeamName,Id),
+    '$c_mpi_get_results'(Id,Answers). 
+
+
+%%%%% get_results %%%%%%%
+get_results(TeamName,Answers) :-
+    yapor_team(TeamName,Id), 
+   '$c_get_results'(Id,Res),
+   '$parallel_findall_recorded_test'(Res,Answers),
+    eraseall(parallel_findall).
+
+
+'$parallel_findall_recorded_test'([],[]) :- !.
+'$parallel_findall_recorded_test'([Ref|Refs],[Template|Answers]):-
+   recorded(parallel_findall,Template,Ref),
+   '$parallel_findall_recorded_test'(Refs,Answers).
+
+%%%%% parallel_findall_test %%%%%%%
+
+parallel_findall_test(Template,Goal,Answers) :- 
+   parallel_mode(Mode), Mode = on, !,
+   '$parallel_findall_query_test'(Template,Goal).
+
+
+'$parallel_findall_query_test'(Template,Goal) :-
+   '$c_yapor_start'(Results), 
+   '$execute'(Goal), 
+   writeln(Template),
+   recordz(parallel_findall,Template,Ref),
+   '$c_parallel_new_answer'(Ref),
+   fail.
+'$parallel_findall_query_test'(_,_).
+
+%%%%% MPI parallel_findall_test %%%%%%%
+
+mpi_parallel_findall_test(Template,Goal,Answers) :- 
+   parallel_mode(Mode), Mode = on, !,
+   '$mpi_parallel_findall_query_test'(Template,Goal).
+
+
+'$mpi_parallel_findall_query_test'(Template,Goal) :-
+   '$c_yapor_start'(1),
+   '$execute'(Goal), 
+   %writeln(Template),
+   %recordz(parallel_findall,Template,Ref),
+   '$c_mpi_parallel_new_answer'(Template),
+   fail.
+'$mpi_parallel_findall_query_test'(_,_).
+
+%%%%% parallel_findall_test_no_store_ans %%%%%%%
+
+parallel_findall_test_no_store_ans(Template,Goal,Answers) :-
+   parallel_mode(Mode),Mode = on, !,
+   '$parallel_findall_query_test_no_store_ans'(Template,Goal).
+
+
+'$parallel_findall_query_test_no_store_ans'(Template,Goal) :- 
+   '$c_yapor_start'(Results),
+   '$execute'(Goal), 
+   %writeln(Goal),
+   %recordz(parallel_findall,Template,Ref),
+   %'$c_parallel_new_answer'(Ref),
+   fail.
+'$parallel_findall_query_test_no_store_ans'(_,_).
+
+%%%%% MPI parallel_findall_test_no_store_ans %%%%%%%
+
+mpi_parallel_findall_test_no_store_ans(Template,Goal,Answers) :-
+   parallel_mode(Mode),Mode = on, !,
+   '$mpi_parallel_findall_query_test_no_store_ans'(Template,Goal),fail.
+
+
+'$mpi_parallel_findall_query_test_no_store_ans'(Template,Goal) :- 
+   '$c_yapor_start'(0),
+   '$execute'(Goal), 
+   %writeln(Goal),
+   %recordz(parallel_findall,Template,Ref),
+   %'$c_parallel_new_answer'(Ref),
+   fail.
+'$mpi_parallel_findall_query_test_no_store_ans'(_,_).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

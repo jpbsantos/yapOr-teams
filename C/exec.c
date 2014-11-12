@@ -1180,6 +1180,7 @@ do_goal(yamop *CodeAdr, int arity, CELL *pt, int top USES_REGS)
   Int out;
 
   Yap_PrepGoal(arity, pt, saved_b PASS_REGS);
+  //printf("do goal %d\n",IntOfTerm(ASP[0]));
   P = (yamop *) CodeAdr;
   S = CellPtr (RepPredProp (PredPropByFunc (Yap_MkFunctor(AtomCall, 1),0)));	/* A1 mishaps */
 
@@ -1189,6 +1190,7 @@ do_goal(yamop *CodeAdr, int arity, CELL *pt, int top USES_REGS)
   //    out = Yap_GetFromSlot(sl);
   //  }
   //  Yap_RecoverSlots(1);
+  //printf("FIM do goal %d\n",IntOfTerm(ASP[0]));
   return out;
 }
 
@@ -1365,6 +1367,9 @@ Yap_RunTopGoal(Term t)
     arity = 0;
   } else if (IsApplTerm(t)) {
     Functor f = FunctorOfTerm(t);
+    //printf("EXEC.C  ######  \n");
+    //Yap_DebugPlWrite(t);
+    //printf("EXEC.C  ######  \n");
 
     if (IsBlobFunctor(f)) {
       Yap_Error(TYPE_ERROR_CALLABLE,t,"call/1");
@@ -1410,6 +1415,7 @@ Yap_RunTopGoal(Term t)
 	  "unable to boot because of too little Trail space");
   }
 #endif
+  printf("antes do goal %d\n",IntOfTerm(ASP[0]));
   goal_out = do_goal(CodeAdr, arity, pt, TRUE PASS_REGS);
   return goal_out;
 }
@@ -1728,6 +1734,8 @@ p_generate_pred_info( USES_REGS1 ) {
 void
 Yap_InitYaamRegs( int myworker_id )
 {
+  
+  
   Term h0var;
   //  getchar();
 #if PUSH_REGS
@@ -1751,7 +1759,9 @@ Yap_InitYaamRegs( int myworker_id )
   Yap_PutValue (AtomBreak, MkIntTerm (0));
   TR = (tr_fr_ptr)REMOTE_TrailBase(myworker_id);
   HR = H0 = ((CELL *) REMOTE_GlobalBase(myworker_id))+1; // +1: hack to ensure the gc does not try to mark mistakenly
+  printf("INIT YAMM RE_GS %p\n",ASP);
   LCL0 = ASP = (CELL *) REMOTE_LocalBase(myworker_id);
+  printf("INIT YAMM RE_GS %p\n",ASP);
   CurrentTrailTop = (tr_fr_ptr)(REMOTE_TrailTop(myworker_id)-MinTrailGap);
   /* notice that an initial choice-point and environment
    *must* be created since for the garbage collector to work */
@@ -1803,6 +1813,90 @@ Yap_InitYaamRegs( int myworker_id )
     DepFr_cons_cp(REMOTE_top_dep_fr(myworker_id)) = NORM_CP(B);
 #endif
   UNLOCK(REMOTE_SignalLock(myworker_id));
+  // make sure we have slots in case we don go through the top-level */
+  Yap_StartSlots( PASS_REGS1 );
+
+}
+
+void
+Yap_InitYaamRegs2( int myworker_id, int myteam_id )
+{
+  Term h0var;
+  //  getchar();
+#if PUSH_REGS
+  /* Guarantee that after a longjmp we go back to the original abstract
+     machine registers */
+#ifdef THREADS
+  CACHE_REGS
+   if (myworker_id) {
+     REGSTORE *rs = LOCAL_ThreadHandle.default_yaam_regs;
+     pthread_setspecific(Yap_yaamregs_key,  (const void *)rs);
+     LOCAL_PL_local_data_p->reg_cache = rs;
+     LOCAL_ThreadHandle.current_yaam_regs = rs;
+     REFRESH_CACHE_REGS
+   }
+  /* may be run by worker_id on behalf on myworker_id */
+#else
+  Yap_regp = &Yap_standard_regs;
+#endif
+#if defined(YAPOR) || defined(THREADS)
+  worker_id = myworker_id;
+  team_id = myteam_id;
+  LOCAL = REMOTE(myworker_id);
+#endif /* THREADS */
+#endif /* PUSH_REGS */
+  Yap_ResetExceptionTerm ( myworker_id );
+  Yap_PutValue (AtomBreak, MkIntTerm (0));
+  TR = (tr_fr_ptr)LOCAL_TrailBase;
+  HR = H0 = ((CELL *) LOCAL_GlobalBase)+1; // +1: hack to ensure the gc does not try to mark mistakenly
+  LCL0 = ASP = (CELL *) LOCAL_LocalBase;
+  CurrentTrailTop = (tr_fr_ptr)(LOCAL_TrailTop-MinTrailGap);
+  /* notice that an initial choice-point and environment
+   *must* be created since for the garbage collector to work */
+  B = NULL;
+  ENV = NULL;
+  P = CP = YESCODE;
+#ifdef DEPTH_LIMIT
+  DEPTH = RESET_DEPTH();
+#endif
+  STATIC_PREDICATES_MARKED = FALSE;
+#ifdef FROZEN_STACKS
+  H_FZ = HR;
+#ifdef YAPOR_SBA
+  BSEG =
+#endif /* YAPOR_SBA */
+    BBREG = B_FZ = (choiceptr) LOCAL_LocalBase;
+  TR = TR_FZ = (tr_fr_ptr) LOCAL_TrailBase;
+#endif /* FROZEN_STACKS */
+  LOCK(LOCAL_SignalLock);
+  CalculateStackGap( PASS_REGS1 );
+  /* the first real choice-point will also have AP=FAIL */ 
+  /* always have an empty slots for people to use */
+  LOCAL_GlobalArena = TermNil;
+#if COROUTINING
+  LOCAL_WokenGoals = Yap_NewTimedVar(TermNil);
+  h0var = MkVarTerm();
+  LOCAL_AttsMutableList = Yap_NewTimedVar(h0var);
+#endif
+  LOCAL_CurSlot = 0;
+  h0var = MkVarTerm();
+  LOCAL_GcGeneration = Yap_NewTimedVar(h0var);
+  LOCAL_GcCurrentPhase = 0L;
+  LOCAL_GcPhase = Yap_NewTimedVar(MkIntTerm(LOCAL_GcCurrentPhase));
+#if defined(YAPOR) || defined(THREADS)
+  PP = NULL;
+  PREG_ADDR = NULL;
+#endif
+  Yap_AllocateDefaultArena(128*1024, 2, myworker_id);
+  Yap_InitPreAllocCodeSpace( myworker_id );
+  cut_c_initialize( myworker_id );
+  Yap_PrepGoal(0, NULL, NULL PASS_REGS);
+#ifdef TABLING
+  /* ensure that LOCAL_top_dep_fr is always valid */
+  if (LOCAL_top_dep_fr)
+    DepFr_cons_cp(LOCAL_top_dep_fr) = NORM_CP(B);
+#endif
+  UNLOCK(LOCAL_SignalLock);
   // make sure we have slots in case we don go through the top-level */
   Yap_StartSlots( PASS_REGS1 );
 

@@ -125,6 +125,13 @@ typedef struct regstore_t
     struct pred_entry *PP_;
 #if defined(YAPOR) || defined(THREADS)
     unsigned int worker_id_;
+#ifdef YAPOR_TEAMS
+    struct global_optyap_data *optyap_data_;
+    struct comm_optyap_data *comm_;
+    unsigned int global_worker_id_;
+    unsigned int team_id_;
+    unsigned int com_rank_;
+#endif
     struct worker_local *worker_local_;
     /* recursive write-locks for PredEntry */
     yamop **PREG_ADDR_;
@@ -640,6 +647,13 @@ INLINE_ONLY EXTERN inline void restore_B(void) {
 #define PP	         (Yap_REGS.PP_)
 #if defined(YAPOR) || defined(THREADS)
 #define worker_id     (Yap_REGS.worker_id_)
+#ifdef YAPOR_TEAMS
+#define OPT                  (Yap_REGS.optyap_data_)
+#define COMM1                (Yap_REGS.comm_)
+#define team_id              (Yap_REGS.team_id_)
+#define comm_rank              (Yap_REGS.com_rank_)
+#define global_worker_id     (Yap_REGS.global_worker_id_)
+#endif
 #define LOCAL	      (Yap_REGS.worker_local_)
 #define PREG_ADDR     (Yap_REGS.PREG_ADDR_)
 #ifdef YAPOR_SBA

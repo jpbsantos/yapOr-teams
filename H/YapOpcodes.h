@@ -1,6 +1,10 @@
 
   /* This file was generated automatically by "yap -L misc/buildops"
      please do not update */
+#ifdef YAPOR_TEAMS
+OPCODE(invalidwork                ,Otapl),
+OPCODE(mpistart                ,Otapl),
+#endif
 
   OPCODE(Ystop                      ,l),
   OPCODE(Nstop                      ,e),
