@@ -27,11 +27,6 @@ static Int p_current_module( USES_REGS1 );
 static Int p_current_module1( USES_REGS1 );
 static ModEntry *LookupModule(Term a);
 
- unsigned int
-getUnknownModule(ModEntry * m) {
-  return m->flags & UNKNOWN_MASK;
-}
-
 inline static ModEntry *
 FetchModuleEntry(Atom at)
 /* get predicate entry for ap/arity; create it if neccessary.              */
@@ -90,6 +85,15 @@ GetModuleEntry(Atom at)
   return new;
 }
 
+ unsigned int
+ getUnknownModule(ModEntry * m) {
+   if (m && m->flags & UNKNOWN_MASK)
+     return m->flags & UNKNOWN_MASK;
+   else {
+     return GetModuleEntry(AtomUser)->flags & UNKNOWN_MASK;
+   }
+     
+}
 
 #define ByteAdr(X) ((char *) &(X))
 Term 
@@ -120,8 +124,9 @@ LookupModule(Term a )
   ModEntry *me;
 
   /* prolog module */
-  if (a == 0)
-    return GetModuleEntry(AtomProlog);
+  if (a == 0) {
+    return GetModuleEntry(AtomUser);
+  }
   at = AtomOfTerm(a);
   me = GetModuleEntry(at);
   return me;
@@ -255,7 +260,63 @@ p_strip_module( USES_REGS1 )
   }
   t1 = Yap_StripModule( t1, &tmod );
   if (!t1) {
-    Yap_Error(TYPE_ERROR_CALLABLE,ARG1,"trying to obtain module");
+    Yap_Error(TYPE_ERROR_CALLABLE,t1,"trying to obtain module");
+    return FALSE;
+  }
+  return Yap_unify(ARG3, t1) &&
+    Yap_unify(ARG2, tmod);      
+}
+
+static Term
+Yap_YapStripModule(Term t,  Term *modp)
+{
+  CACHE_REGS
+  Term tmod;
+
+  if (modp)
+    tmod = *modp;
+  else {
+    tmod = CurrentModule;
+    if (tmod == PROLOG_MODULE) {
+      tmod = TermProlog;
+    }
+  }
+ restart:
+  if (IsVarTerm(t) || !IsApplTerm(t)) {
+    if (modp)
+      *modp = tmod;
+    return t;
+  } else {
+    Functor    fun = FunctorOfTerm(t);
+    if (fun == FunctorModule) {
+      Term t1 = ArgOfTerm(1, t); 
+      tmod = t1;
+      if (!IsVarTerm(tmod) && !IsAtomTerm(tmod) ) {
+	return 0L;
+      }
+      t = ArgOfTerm(2, t);
+      goto restart;
+    }
+    if (modp)
+      *modp = tmod;
+    return t;
+  }
+  return 0L;
+}
+
+
+
+
+static Int
+p_yap_strip_module( USES_REGS1 )
+{
+  Term t1 = Deref(ARG1), tmod = CurrentModule;
+  if (tmod == PROLOG_MODULE) {
+    tmod = TermProlog;
+  }
+  t1 = Yap_YapStripModule( t1, &tmod );
+  if (!t1) {
+    Yap_Error(TYPE_ERROR_CALLABLE, t1, "trying to obtain module");
     return FALSE;
   }
   return Yap_unify(ARG3, t1) &&
@@ -334,6 +395,7 @@ Yap_InitModulesC(void)
   Yap_InitCPred("$current_module", 1, p_current_module1, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$change_module", 1, p_change_module, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("strip_module", 3, p_strip_module, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred("$yap_strip_module", 3, p_yap_strip_module, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("context_module", 1, p_context_module, 0);
   Yap_InitCPredBack("$all_current_modules", 1, 1, init_current_module, cont_current_module,
 		SafePredFlag|SyncPredFlag);
@@ -345,6 +407,7 @@ Yap_InitModules(void)
 {
   CACHE_REGS
   LookupModule(MkAtomTerm(AtomProlog));
+  LOCAL_SourceModule =  MkAtomTerm(AtomProlog);
   LookupModule(USER_MODULE);
   LookupModule(IDB_MODULE);
   LookupModule(ATTRIBUTES_MODULE);

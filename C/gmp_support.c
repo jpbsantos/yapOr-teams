@@ -338,7 +338,8 @@ Yap_gmp_ior_int_big(Int i, Term t)
 }
 
 #if USE_GMP
-#if !defined(HAVE_MPZ_XOR)
+// cross-compilers...
+#if !defined(HAVE_MPZ_XOR) && !defined(mpz_xor)
 static void
 mpz_xor(MP_INT *new, MP_INT *r1, MP_INT *r2)
 {
@@ -778,7 +779,7 @@ Yap_gmp_rem_big_int(Term t, Int i2)
 {
   CELL *pt = RepAppl(t);
   if (pt[1] != BIG_INT) {
-    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "mod/2");
+    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "rem/2");
   } else {
     MP_INT *b = Yap_BigIntOfTerm(t);
     MP_INT new;
@@ -795,7 +796,7 @@ Yap_gmp_rem_int_big(Int i1, Term t)
   CACHE_REGS
   CELL *pt = RepAppl(t);
   if (pt[1] != BIG_INT) {
-    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "mod/2");
+    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "rem/2");
   } else {
     /* integer is much smaller */
     return MkIntegerTerm(i1);
@@ -829,7 +830,7 @@ Yap_gmp_gcd_int_big(Int i, Term t)
   CACHE_REGS
   CELL *pt = RepAppl(t);
   if (pt[1] != BIG_INT) {
-    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "mod/2");
+    return Yap_ArithError(TYPE_ERROR_INTEGER, t, "gcd/2");
   } else {
     /* integer is much smaller */
     if (i > 0) {

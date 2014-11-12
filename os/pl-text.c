@@ -717,12 +717,21 @@ represented.
 
 static int
 wctobuffer(wchar_t c, mbstate_t *mbs, Buffer buf)
-{ char b[PL_MB_LEN_MAX];
+{
+#if __ANDROID__
+  // wcrtomb & friends seems broken in android, just copy
+  if ( c < 256 ) {
+	  addBuffer(buf, c, 	char);
+	  return TRUE;
+  } else {
+	  return FALSE;
+  }
+#else
+  char b[PL_MB_LEN_MAX];
   size_t n;
 
   if ( (n=wcrtomb(b, c, mbs)) != (size_t)-1 )
   { size_t i;
-
     for(i=0; i<n; i++)
       addBuffer(buf, b[i], char);
 
@@ -730,6 +739,7 @@ wctobuffer(wchar_t c, mbstate_t *mbs, Buffer buf)
   }
 
   return FALSE;				/* cannot represent */
+#endif
 }
 
 
@@ -783,6 +793,40 @@ PL_mb_text(PL_chars_t *text, int flags)
 	}
 
         break;
+      }
+      case ENC_UTF8:
+      { const  char *s = (const  char*)text->text.t;
+	const  char *e = &s[text->length];
+
+	if ( target == ENC_ISO_LATIN_1 )
+	{ for( ; s<e; )
+	    { int ch;
+	      s = _PL__utf8_get_char(s, &ch);
+	      if (ch > 0xff) {
+		unfindBuffer(BUF_RING);
+		norep = *s;
+		goto rep_error;
+	      }
+	      addBuffer(b, ch, char);
+	  }
+	  addBuffer(b, 0, char);
+
+	} else
+	  { mbstate_t mbs;
+
+	    memset(&mbs, 0, sizeof(mbs));
+	    for( ; s<e; )
+	      { int ch;
+		s = _PL__utf8_get_char(s, &ch);
+		if ( !wctobuffer(ch, &mbs, b) )
+		  { unfindBuffer(BUF_RING);
+		    norep = ch;
+		    goto rep_error;
+		  }
+	      }
+	    wctobuffer(0, &mbs, b);
+	  }
+	break;
       }
       case ENC_WCHAR:
       { if ( target == ENC_ISO_LATIN_1 )

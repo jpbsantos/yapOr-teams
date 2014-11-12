@@ -34,6 +34,10 @@ typedef struct global_data {
 
   UInt  AGcThreshold_;
   Agc_hook  AGCHook_;
+#if __ANDROID__
+
+  struct AAssetManager*  assetManager_;
+#endif
 
 #if THREADS
 
@@ -61,10 +65,14 @@ typedef struct global_data {
 
 #if defined(THREADS)
   pthread_t  master_thread_;
+  struct thread_mbox*  named_mboxes_;
+  lockvar  mboxq_lock_;
+  UInt  mbox_count_;
+  struct swi_mutex*  WithMutex_;
 #endif /* THREADS */
 
-  YP_FILE*  stdout_;
-  YP_FILE*  stderr_;
+  struct io_stream*  stdout_;
+  struct io_stream*  stderr_;
 
   char**  argv_;
   int  argc_;

@@ -37,7 +37,14 @@
 #error THREADS only works with YAPOR_THREADS
 #endif /* THREADS && (YAPOR_COW || YAPOR_SBA || YAPOR_COPY) */
 
+// Bad export from Python
+#ifdef HAVE_STAT
+#undef HAVE_STAT
+#endif
 #include "config.h"
+
+#define FunAdr(X) X
+
 #include "inline-only.h"
 #if defined(YAPOR) || defined(TABLING)
 #include "opt.config.h"
@@ -46,6 +53,13 @@
 /* bzero */
 #include <strings.h>
 #endif
+#if HAVE_STDINT_H
+#include <stdint.h>
+#endif
+#if HAVE_INTTYPES_H
+#include <inttypes.h>
+#endif
+
 
 /*
 
@@ -82,6 +96,45 @@
 #if defined(COROUTINING) && !defined(TERM_EXTENSIONS)
 #define TERM_EXTENSIONS 1
 #endif /* COROUTINING && !TERM_EXTENSIONS */
+
+/* truth-values */
+#if HAVE_STDBOOL_H
+#include <stdbool.h>
+#else
+
+typedef int _Bool;
+
+#define bool _Bool;
+
+#define false 0
+#define true 1
+#endif
+
+#ifndef TRUE
+#define	 TRUE	true
+#endif
+#ifndef FALSE
+#define	 FALSE	false
+#endif
+
+/**
+ * Stolen from Mozzila, this code should deal with bad implementations of stdc++.
+ *
+ * Use C++11 nullptr if available; otherwise use a C++ typesafe template; and
+ * for C, fall back to longs.  See bugs 547964 and 626472.
+ */
+#ifndef HAVE_NULLPTR
+#ifndef __cplusplus
+# define nullptr ((void*)0)
+#elif defined(__GNUC__)
+# define nullptr __null
+#elif defined(_WIN64)
+# define nullptr 0LL
+#else
+# define nullptr 0L
+#endif
+#endif /* defined(HAVE_NULLPTR) */
+
 
 /* Microsoft's Visual C++ Compiler */
 #ifdef _MSC_VER   /* adjust a config.h from mingw32 to work with vc++ */
@@ -152,10 +205,6 @@
 #define EXTERN
 #endif /* ADTDEFS_C */
 
-/* truth-values */
-#define	 TRUE	1
-#define	 FALSE	0
-
 
 /* null pointer	*/
 #define	 NIL	0
@@ -168,6 +217,22 @@
 #define LOW_PROF 1
 #endif
 
+#if !defined(HAVE_STRNLEN)
+INLINE_ONLY inline EXTERN size_t
+strnlen(const char *s, size_t maxlen);
+
+INLINE_ONLY inline EXTERN size_t
+strnlen(const char *s, size_t maxlen)
+{
+  size_t i = 0;
+  while (s[i]) {
+    if (i == maxlen)
+      return i;
+    i++;
+  }
+  return i;
+}
+#endif
 
 /* #define FORCE_SECOND_QUADRANT 1 */
 
@@ -277,6 +342,12 @@ typedef pthread_rwlock_t rwlock_t;
 #include <locks_pthread.h>
 #endif
 
+#define FUNC_READ_LOCK(X) READ_LOCK((X)->FRWLock)
+#define FUNC_READ_UNLOCK(X) READ_UNLOCK((X)->FRWLock)
+#define FUNC_WRITE_LOCK(X) WRITE_LOCK((X)->FRWLock)
+#define FUNC_WRITE_UNLOCK(X) WRITE_UNLOCK((X)->FRWLock)
+
+
 /*************************************************************************************************
                               use an auxiliary function for ranges	
 *************************************************************************************************/
@@ -292,6 +363,14 @@ typedef pthread_rwlock_t rwlock_t;
 
 #define OUTSIDE(MIN,X,MAX) ((void *)(X) < (void *)(MIN) || (void *)(X) > (void *)(MAX))
 #endif
+
+/*************************************************************************************************
+                              main exports in YapInterface.h
+*************************************************************************************************/
+
+/* Basic exports */
+
+#include "YapDefs.h"
 
 /*************************************************************************************************
                                              Atoms	
@@ -347,6 +426,7 @@ typedef enum
 {
   LANGUAGE_MODE_FLAG = 8,
   SOURCE_MODE_FLAG = 11,
+  FLOATING_POINT_EXCEPTION_MODE_FLAG = 12,
   WRITE_QUOTED_STRING_FLAG = 13,
   ALLOW_ASSERTING_STATIC_FLAG = 14,
   HALT_AFTER_CONSULT_FLAG = 15,
@@ -375,30 +455,6 @@ typedef enum
   INDEX_MODE_MULTI = 3,
   INDEX_MODE_MAX = 4
 } index_mode_options;
-
-typedef enum
-{
-  YAP_CREEP_SIGNAL = 0x1,	/* received a creep */
-  YAP_WAKEUP_SIGNAL = 0x2,	/* goals to wake up */
-  YAP_ALARM_SIGNAL = 0x4,	/* received an alarm */
-  YAP_HUP_SIGNAL = 0x8,		/* received SIGHUP */
-  YAP_USR1_SIGNAL = 0x10,	/* received SIGUSR1 */
-  YAP_USR2_SIGNAL = 0x20,	/* received SIGUSR2 */
-  YAP_INT_SIGNAL = 0x40,	/* received SIGINT (unused for now) */
-  YAP_ITI_SIGNAL = 0x80,	/* received inter thread signal */
-  YAP_TROVF_SIGNAL = 0x100,	/* received trail overflow */
-  YAP_CDOVF_SIGNAL = 0x200,	/* received code overflow */
-  YAP_STOVF_SIGNAL = 0x400,	/* received stack overflow */
-  YAP_TRACE_SIGNAL = 0x800,	/* received start trace */
-  YAP_DEBUG_SIGNAL = 0x1000,	/* received start debug */
-  YAP_BREAK_SIGNAL = 0x2000,	/* received break signal */
-  YAP_STACK_DUMP_SIGNAL = 0x4000,	/* received stack dump signal */
-  YAP_STATISTICS_SIGNAL = 0x8000,	/* received statistics */
-  YAP_AGC_SIGNAL = 0x20000,	/* call atom garbage collector asap */
-  YAP_PIPE_SIGNAL = 0x40000,	/* call atom garbage collector asap */
-  YAP_VTALARM_SIGNAL = 0x80000,	/* received SIGVTALARM */
-  YAP_FAIL_SIGNAL = 0x100000	/* P = FAILCODE */
-} yap_signals;
 
 typedef enum
 {
@@ -458,6 +514,21 @@ extern ADDR Yap_HeapBase;
 #ifdef DEBUG
 extern int Yap_output_msg;
 #endif
+
+
+#if __ANDROID__
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
+#include <android/log.h>
+#else
+static inline char * __android_log_print(int i,const char *loc,const char *msg,...) {
+  return NULL;
+}
+#define ANDROID_LOG_INFO 0
+#define ANDROID_LOG_ERROR 0
+#define ANDROID_LOG_DEBUG 0
+#endif
+
 
 /*************************************************************************************************
                                 variables concerned with atoms table
@@ -617,7 +688,40 @@ typedef enum
 
 
 /************************/
+  // queues are an example of collections of DB objects
+  typedef struct queue_entry {
+    struct queue_entry *next;
+    struct DB_TERM *DBT;
+  } QueueEntry;
+
+  typedef struct idb_queue
+  {
+    struct FunctorEntryStruct *id;		/* identify this as being pointed to by a DBRef */
+    SMALLUNSGN    Flags;  /* always required */
+  #if PARALLEL_YAP
+    rwlock_t    QRWLock;         /* a simple lock to protect this entry */
+  #endif
+    QueueEntry *FirstInQueue, *LastInQueue;
+  }  db_queue;
+
+void Yap_init_tqueue( db_queue *dbq );
+void Yap_destroy_tqueue( db_queue *dbq  USES_REGS);
+bool Yap_enqueue_tqueue(db_queue *father_key, Term t USES_REGS);
+bool Yap_dequeue_tqueue(db_queue *father_key, Term t, bool first, bool release USES_REGS);
+
 #ifdef THREADS
+
+
+typedef struct thread_mbox {
+    Term name;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+   struct idb_queue msgs;
+    int  nmsgs, nclients;  // if nclients < 0 mailbox has been closed.
+    bool open;
+    struct thread_mbox *next;
+} mbox_t;
+
 typedef struct thandle {
   int in_use;
   int zombie;
@@ -634,6 +738,7 @@ typedef struct thandle {
   REGSTORE *current_yaam_regs;
   struct pred_entry *local_preds;
   pthread_t pthread_handle;
+  mbox_t    mbox_handle;
   int ref_count;
 #ifdef LOW_LEVEL_TRACER
   long long int thread_inst_count;
@@ -696,7 +801,6 @@ typedef struct scratch_block_struct {
 #endif /* YAPOR || TABLING */
 
 
-
 /*************************************************************************************************
                                   GLOBAL and LOCAL variables
 *************************************************************************************************/
@@ -751,6 +855,11 @@ extern struct worker_local Yap_local;
 #include "YapCompoundTerm.h"
 
 #include "YapHandles.h"
+
+// take care of signal handling within YAP
+
+#include "YapSignals.h"
+
 
 #endif /* YAP_H */
 

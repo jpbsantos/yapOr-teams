@@ -21,6 +21,12 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+/**
+ * @defgroup Format Formatted Output
+ * @ingroup InputOutput
+ * @{
+ */
+
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Formatted output (Prolog predicates format/[1,2,3]).   One  day,  the  C
 source should also use format() to produce error messages, etc.
@@ -326,6 +332,12 @@ format_impl(IOSTREAM *out, term_t format, term_t Args, Module m)
 }
 
 
+/** @pred  format(+ _S_,+ _T_,+ _L_)
+
+Print formatted output to stream  _S_.
+
+
+*/
 word
 pl_format3(term_t out, term_t format, term_t args)
 { GET_LD
@@ -347,7 +359,210 @@ pl_format3(term_t out, term_t format, term_t args)
   return rc;
 }
 
+/** @pred  format(+ _T_,+ _L_)
 
+
+Print formatted output to the current output stream. The arguments in
+list  _L_ are output according to the string or atom  _T_.
+
+A control sequence is introduced by a `w`. The following control
+sequences are available in YAP:
+
+
+
++ `~~`
+Print a single tilde.
+
++ `~a`
+The next argument must be an atom, that will be printed as if by `write`.
+
++ `~Nc`
+The next argument must be an integer, that will be printed as a
+character code. The number  _N_ is the number of times to print the
+character (default 1).
+
++ `~Ne`
++ `~NE`
++ `~Nf`
++ `~Ng`
++ `~NG`
+The next argument must be a floating point number. The float  _F_, the number
+ _N_ and the control code `c` will be passed to `printf` as:
+
+~~~~~{.prolog}
+    printf("%s.Nc", F)
+~~~~~
+
+As an example:
+
+~~~~~{.prolog}
+?- format("~8e, ~8E, ~8f, ~8g, ~8G~w",
+          [3.14,3.14,3.14,3.14,3.14,3.14]).
+3.140000e+00, 3.140000E+00, 3.140000, 3.14, 3.143.14
+~~~~~
+
++ `~Nd`
+The next argument must be an integer, and  _N_ is the number of digits
+after the decimal point. If  _N_ is `0` no decimal points will be
+printed. The default is  _N = 0_.
+
+~~~~~{.prolog}
+?- format("~2d, ~d",[15000, 15000]).
+150.00, 15000
+~~~~~
+
++ `~ND`
+Identical to `~Nd`, except that commas are used to separate groups
+of three digits.
+
+~~~~~{.prolog}
+?- format("~2D, ~D",[150000, 150000]).
+1,500.00, 150,000
+~~~~~
+
++ `~i`
+Ignore the next argument in the list of arguments:
+
+~~~~~{.prolog}
+?- format('The ~i met the boregrove',[mimsy]).
+The  met the boregrove
+~~~~~
+
++ `~k`
+Print the next argument with `write_canonical`:
+
+~~~~~{.prolog}
+?- format("Good night ~k",a+[1,2]).
+Good night +(a,[1,2])
+~~~~~
+
++ `~Nn`
+Print  _N_ newlines (where  _N_ defaults to 1).
+
++ `~NN`
+Print  _N_ newlines if at the beginning of the line (where  _N_
+defaults to 1).
+
++ `~Nr`
+The next argument must be an integer, and  _N_ is interpreted as a
+radix, such that `2 <= N <= 36` (the default is 8).
+
+~~~~~{.prolog}
+?- format("~2r, 0x~16r, ~r",
+          [150000, 150000, 150000]).
+100100100111110000, 0x249f0, 444760
+~~~~~
+
+Note that the letters `a-z` denote digits larger than 9.
+
++ `~NR`
+Similar to `~NR`. The next argument must be an integer, and  _N_ is
+interpreted as a radix, such that `2 <= N <= 36` (the default is 8).
+
+~~~~~{.prolog}
+?- format("~2r, 0x~16r, ~r",
+          [150000, 150000, 150000]).
+100100100111110000, 0x249F0, 444760
+~~~~~
+
+The only difference is that letters `A-Z` denote digits larger than 9.
+
++ `~p`
+Print the next argument with print/1:
+
+~~~~~{.prolog}
+?- format("Good night ~p",a+[1,2]).
+Good night a+[1,2]
+~~~~~
+
++ `~q`
+Print the next argument with writeq/1:
+
+~~~~~{.prolog}
+?- format("Good night ~q",'Hello'+[1,2]).
+Good night 'Hello'+[1,2]
+~~~~~
+
++ `~Ns`
+The next argument must be a list of character codes. The system then
+outputs their representation as a string, where  _N_ is the maximum
+number of characters for the string ( _N_ defaults to the length of the
+string).
+
+~~~~~{.prolog}
+?- format("The ~s are ~4s",["woods","lovely"]).
+The woods are love
+~~~~~
+
++ `~w`
+Print the next argument with write/1:
+
+~~~~~
+?- format("Good night ~w",'Hello'+[1,2]).
+Good night Hello+[1,2]
+~~~~~
+
+
+The number of arguments, `N`, may be given as an integer, or it
+may be given as an extra argument. The next example shows a small
+procedure to write a variable number of `a` characters:
+
+~~~~~
+write_many_as(N) :-
+        format("~*c",[N,0'a]).
+~~~~~
+
+The format/2 built-in also allows for formatted output.  One can
+specify column boundaries and fill the intermediate space by a padding
+character:
+
++ `~N|`
+Set a column boundary at position  _N_, where  _N_ defaults to the
+current position.
+
++ `~N+`
+Set a column boundary at  _N_ characters past the current position, where
+ _N_ defaults to `8`.
+
++ `~Nt`
+Set padding for a column, where  _N_ is the fill code (default is
+`SPC`).
+
+
+
+The next example shows how to align columns and padding. We first show
+left-alignment:
+
+~~~~~
+   ?- format("~n*Hello~16+*~n",[]).
+*Hello          *
+~~~~~
+
+Note that we reserve 16 characters for the column.
+
+The following example shows how to do right-alignment:
+
+~~~~~
+   ?- format("*~tHello~16+*~n",[]).
+*          Hello*
+
+~~~~~
+
+The `~t` escape sequence forces filling before `Hello`.
+
+We next show how to do centering:
+
+~~~~~
+   ?- format("*~tHello~t~16+*~n",[]).
+*     Hello     *
+~~~~~
+
+The two `~t` escape sequence force filling both before and after
+`Hello`. Space is then evenly divided between the right and the
+left sides.
+
+
+*/
 word
 pl_format(term_t fmt, term_t args)
 { return pl_format3(0, fmt, args);
@@ -360,6 +575,8 @@ get_chr_from_text(const PL_chars_t *t, int index)
   { case ENC_ISO_LATIN_1:
       return t->text.t[index]&0xff;
     case ENC_WCHAR:
+      return t->text.w[index];
+    case ENC_UTF8:
       return t->text.w[index];
     default:
       assert(0);
@@ -1115,6 +1332,7 @@ formatInteger(PL_locale *locale, int div, int radix, bool smll, Number i,
   }
 }
 
+#if O_LOCALE
 
 static int
 countGroups(const char *grouping, int len)
@@ -1141,7 +1359,6 @@ countGroups(const char *grouping, int len)
   return groups;
 }
 
-
 static int
 ths_to_utf8(char *u8, const wchar_t *s, size_t len)
 { char *e = u8+len-7;
@@ -1153,7 +1370,6 @@ ths_to_utf8(char *u8, const wchar_t *s, size_t len)
   return *s == 0;
 }
 
-
 static int
 same_decimal_point(PL_locale *l1, PL_locale *l2)
 { if ( l1->decimal_point && l2->decimal_point &&
@@ -1164,7 +1380,6 @@ same_decimal_point(PL_locale *l1, PL_locale *l2)
 
   return FALSE;
 }
-
 
 static int
 utf8_dp(PL_locale *l, char *s, int *len)
@@ -1227,7 +1442,6 @@ localizeDecimalPoint(PL_locale *locale, Buffer b)
   return TRUE;
 }
 
-
 static int
 groupDigits(PL_locale *locale, Buffer b)
 { if ( locale->thousands_sep && locale->thousands_sep[0] &&
@@ -1278,6 +1492,7 @@ groupDigits(PL_locale *locale, Buffer b)
 
   return TRUE;
 }
+#endif
 
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1334,7 +1549,7 @@ formatFloat(PL_locale *locale, int how, int arg, Number f, Buffer out)
       int written = 0;
       int fbits;
       int digits = 0;
-      int padding = 0;
+      int padding;
 
       switch(how)
       { case 'f':
@@ -1370,6 +1585,8 @@ formatFloat(PL_locale *locale, int how, int arg, Number f, Buffer out)
           if (digits <= arg)             /* leading '0's */
           { padding = (arg-digits+1);
             size += padding;
+          } else
+          { padding = 0;
           }
           size++;                        /* NULL terminator */
 
@@ -1477,11 +1694,15 @@ formatFloat(PL_locale *locale, int how, int arg, Number f, Buffer out)
       return NULL;
   }
 
+#if O_LOCALE
   if ( locale )
   { if ( !localizeDecimalPoint(locale, out) ||
 	 !groupDigits(locale, out) )
       return NULL;
   }
+#endif
 
   return baseBuffer(out, char);
 }
+
+//! @}

@@ -91,6 +91,15 @@ register struct yami* P1REG asm ("bp"); /* can't use yamop before Yap.h */
 #define     TR_IN_MEM  1
 #endif /* sparc_ */
 
+#if defined(__arm__) || defined(__thumb__)
+
+#define Y_IN_MEM       1
+#define S_IN_MEM       1
+#define TR_IN_MEM      1
+#define HAVE_FEW_REGS  1
+#endif
+
+
 #ifdef __x86_64__
 #define SHADOW_P       1
 #ifdef BP_FREE
@@ -370,7 +379,7 @@ restore_absmi_regs(REGSTORE * old_regs)
 
 #define DO_PREFETCH(TYPE) to_go = (void *)(NEXTOP(PREG,TYPE)->opc)
 
-#define DO_PREFETCH_W(TYPE) to_go = (void *)(NEXTOP(PREG,TYPE)->u.o.opcw)
+#define DO_PREFETCH_W(TYPE) to_go = (void *)(NEXTOP(PREG,TYPE)->y_u.o.opcw)
 
 #if LIMITED_PREFETCH||USE_PREFETCH
 
@@ -457,7 +466,7 @@ restore_absmi_regs(REGSTORE * old_regs)
 	JMP((void *)(PREG->opc))
 
 #define JMPNextW()						\
-	JMP((void *)(PREG->u.o.opcw))
+	JMP((void *)(PREG->y_u.o.opcw))
 
 #if USE_THREADED_CODE && (LIMITED_PREFETCH || USE_PREFETCH)
 
@@ -1579,15 +1588,6 @@ prune(choiceptr cp USES_REGS)
     }
 }
 
-#define SET_ASP(Y,S) SET_ASP__(Y,S PASS_REGS)
-
-static inline
-void SET_ASP__(CELL *yreg, Int sz USES_REGS) {
-  ASP = (CELL *) (((char *) yreg) + sz);
-  if (ASP > (CELL *)PROTECT_FROZEN_B(B))
-    ASP = (CELL *)PROTECT_FROZEN_B(B);
-}
-
 #if YAPOR
 #define INITIALIZE_PERMVAR(PTR, V) Bind_Local((PTR), (V))
 #else
@@ -1616,6 +1616,7 @@ void SET_ASP__(CELL *yreg, Int sz USES_REGS) {
       setregs(); \
       SREG = Yap_REGS.S_; \
       if (!d0) FAIL(); \
+      PP = NULL;\
       if (d0 == 2) goto C; \
       JMPNext(); \
       ENDD(d0);
@@ -1625,6 +1626,7 @@ void SET_ASP__(CELL *yreg, Int sz USES_REGS) {
       saveregs(); \
       d0 = F ( PASS_REGS1 );\
       setregs(); \
+      PP = NULL;\
       if (!d0) FAIL(); \
       if (d0 == 2) goto C; \
       JMPNext(); \

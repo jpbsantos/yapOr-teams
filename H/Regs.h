@@ -13,6 +13,8 @@
 * version:      $Id: Regs.h,v 1.42 2008-08-12 01:27:22 vsc Exp $	 *
 *************************************************************************/
 
+#ifndef REGS_H
+#define REGS_H 1
 
 /*********  abstract machine registers **********************************/
 #ifdef YAP_H
@@ -83,6 +85,7 @@ INLINE_ONLY inline EXTERN void save_B(void);
 #define PASS_REGS
 #define USES_REGS1 void
 #define USES_REGS
+#define WORKER_REGS(WID)
 
 typedef struct regstore_t
   {
@@ -184,13 +187,16 @@ extern pthread_key_t Yap_yaamregs_key;
 #undef CACHE_REGS
 #undef REFRESH_CACHE_REGS
 #undef INIT_REGS
+#undef CACHE_REGS
 #undef PASS_REGS
 #undef PASS_REGS1
 #undef USES_REGS
 #undef USES_REGS1
+#undef WORKER_REGS
 #define CACHE_REGS REGSTORE *regcache = ((REGSTORE *)pthread_getspecific(Yap_yaamregs_key));
 #define REFRESH_CACHE_REGS regcache = ((REGSTORE *)pthread_getspecific(Yap_yaamregs_key));
 #define INIT_REGS , ((REGSTORE *)pthread_getspecific(Yap_yaamregs_key))
+#define WORKER_REGS(WID)  REGSTORE *regcache = REMOTE_ThreadHandle(WID).current_yaam_regs;
 #define PASS_REGS1 regcache
 #define PASS_REGS , regcache
 #define USES_REGS1 struct regstore_t *regcache
@@ -666,6 +672,7 @@ INLINE_ONLY EXTERN inline void restore_B(void) {
 #define frame_tail    Yap_REGS.frame_tail_
 #endif /* YAPOR_SBA */
 #else
+#define worker_id     0
 #define LOCAL	      (&Yap_local)
 #endif /* YAPOR || THREADS */
 #define CurrentModule Yap_REGS.CurrentModule_
@@ -703,6 +710,33 @@ INLINE_ONLY EXTERN inline void restore_B(void) {
 #define BBREG         BB
 #endif /* YAPOR_SBA || TABLING */
 
+// define how to handle frozen segments in tabling, etv.
+#ifdef FROZEN_STACKS
+#ifdef YAPOR_SBA
+#define PROTECT_FROZEN_H(CPTR)                                  \
+       ((Unsigned((Int)((CPTR)->cp_h)-(Int)(H_FZ)) <            \
+	 Unsigned((Int)(B_FZ)-(Int)(H_FZ))) ?                   \
+	(CPTR)->cp_h : H_FZ)
+#define PROTECT_FROZEN_B(CPTR)                                  \
+       ((Unsigned((Int)(CPTR)-(Int)(H_FZ)) <                    \
+	 Unsigned((Int)(B_FZ)-(Int)(H_FZ)))  ?                  \
+	(CPTR) : B_FZ)
+	 /*
+#define PROTECT_FROZEN_H(CPTR) ((CPTR)->cp_h > H_FZ && (CPTR)->cp_h < (CELL *)B_FZ ? (CPTR)->cp_h : H_FZ )
+
+#define PROTECT_FROZEN_B(CPTR)  ((CPTR) < B_FZ && (CPTR) > (choiceptr)H_FZ ? (CPTR) : B_FZ )
+	 */
+#else /* TABLING */
+#define PROTECT_FROZEN_B(CPTR)  (YOUNGER_CP(CPTR, B_FZ) ? CPTR        : B_FZ)
+#define PROTECT_FROZEN_H(CPTR)  (((CPTR)->cp_h > H_FZ) ? (CPTR)->cp_h : H_FZ)
+#endif /* YAPOR_SBA */
+#else
+#define PROTECT_FROZEN_B(CPTR)  (CPTR)
+#define PROTECT_FROZEN_H(CPTR)  (CPTR)->cp_h
+#endif /* FROZEN_STACKS */
+
+
+
 #if !defined(THREADS)
 /* use actual addresses for regs */
 #define PRECOMPUTE_REGADDRESS 1
@@ -736,3 +770,13 @@ CalculateStackGap( USES_REGS1 )
   CreepFlag = EventFlag = StackGap( PASS_REGS1 );
 }
 
+#define SET_ASP(Y,S) SET_ASP__(Y,S PASS_REGS)
+
+static inline
+void SET_ASP__(CELL *yreg, Int sz USES_REGS) {
+  ASP = (CELL *) (((char *) yreg) + sz);
+  if (ASP > (CELL *)PROTECT_FROZEN_B(B))
+    ASP = (CELL *)PROTECT_FROZEN_B(B);
+}
+
+#endif

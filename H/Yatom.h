@@ -640,7 +640,7 @@ IsValProperty (int flags)
 #if SIZEOF_INT_P==4
 #define EXTRA_FLAG_BASE 0
 #else
-#define EXTRA_FLAG_BASE 32
+#define EXTRA_FLAG_BASE 33
 #endif
 
 /*	    predicate property entry structure				*/
@@ -655,41 +655,43 @@ don;t forget to also add in qly.h
 */
 typedef enum
 {
-  NoDebugPredFlag = ((UInt)0x00000004L << EXTRA_FLAG_BASE),		/* cannot trace this preducate */
-  NoTracePredFlag = ((UInt)0x00000002L << EXTRA_FLAG_BASE),		/* cannot trace this preducate */
-  QuasiQuotationPredFlag = ((UInt)0x00000001L << EXTRA_FLAG_BASE),		/* SWI-like quasi quotations */
-  MegaClausePredFlag =   0x80000000L, /* predicate is implemented as a mega-clause */
-  ThreadLocalPredFlag = 0x40000000L,	/* local to a thread */
-  MultiFileFlag = 0x20000000L,	/* is multi-file */
-  UserCPredFlag = 0x10000000L,	/* CPred defined by the user */
-  LogUpdatePredFlag = 0x08000000L,	/* dynamic predicate with log. upd. sem. */
-  InUsePredFlag = 0x04000000L,	/* count calls to pred */
-  CountPredFlag = 0x02000000L,	/* count calls to pred */
-  HiddenPredFlag = 0x01000000L,	/* invisible predicate */
-  CArgsPredFlag = 0x00800000L,	/* SWI-like C-interface pred. */
-  SourcePredFlag = 0x00400000L,	/* static predicate with source declaration */
-  MetaPredFlag = 0x00200000L,	/* predicate subject to a meta declaration */
-  SyncPredFlag = 0x00100000L,	/* has to synch before it can execute */
-  NumberDBPredFlag = 0x00080000L,	/* entry for a number key */
-  AtomDBPredFlag = 0x00040000L,	/* entry for an atom key */
-  GoalExPredFlag = 0x00020000L,	/* predicate that is called by goal_expand */
-  TestPredFlag = 0x00010000L,	/* is a test (optim. comit) */
-  AsmPredFlag = 0x00008000L,	/* inline */
-  StandardPredFlag = 0x00004000L,	/* system predicate */
-  DynamicPredFlag = 0x00002000L,	/* dynamic predicate */
-  CPredFlag = 0x00001000L,	/* written in C */
-  SafePredFlag = 0x00000800L,	/* does not alter arguments */
-  CompiledPredFlag = 0x00000400L,	/* is static */
-  IndexedPredFlag = 0x00000200L,	/* has indexing code */
-  SpiedPredFlag = 0x00000100L,	/* is a spy point */
-  BinaryPredFlag = 0x00000080L,	/* test predicate */
-  TabledPredFlag = 0x00000040L,	/* is tabled */
-  SequentialPredFlag = 0x00000020L,	/* may not create parallel choice points! */
-  ProfiledPredFlag = 0x00000010L,	/* pred is being profiled   */
-  BackCPredFlag = 0x00000008L,    /*	Myddas Imported pred  */
-  ModuleTransparentPredFlag = 0x00000004L,	/* ModuleTransparent pred  */
-  SWIEnvPredFlag = 0x00000002L,	/* new SWI interface */
-  UDIPredFlag = 0x00000001L	/* User Defined Indexing */
+  DiscontiguousPredFlag = ((UInt)0x00000010 << EXTRA_FLAG_BASE),	/* predicates whose clauses may be all-over the place.. */
+  SysExportPredFlag = ((UInt)0x00000008 << EXTRA_FLAG_BASE),		/* reuse export list to prolog module. */
+  NoTracePredFlag = ((UInt)0x00000004 << EXTRA_FLAG_BASE),		/* cannot trace this predicate */
+  NoSpyPredFlag = ((UInt)0x00000002 << EXTRA_FLAG_BASE),		/* cannot spy this predicate */
+  QuasiQuotationPredFlag = ((UInt)0x00000001 << EXTRA_FLAG_BASE),		/* SWI-like quasi quotations */
+  MegaClausePredFlag =   (UInt)0x80000000, /* predicate is implemented as a mega-clause */
+  ThreadLocalPredFlag = (UInt)0x40000000,	/* local to a thread */
+  MultiFileFlag = (UInt)0x20000000,	/* is multi-file */
+  UserCPredFlag = (UInt)0x10000000,	/* CPred defined by the user */
+  LogUpdatePredFlag = (UInt)0x08000000,	/* dynamic predicate with log. upd. sem. */
+  InUsePredFlag = (UInt)0x04000000,	/* count calls to pred */
+  CountPredFlag = (UInt)0x02000000,	/* count calls to pred */
+  HiddenPredFlag = (UInt)0x01000000,	/* invisible predicate */
+  CArgsPredFlag = (UInt)0x00800000,	/* SWI-like C-interface pred. */
+  SourcePredFlag = (UInt)0x00400000,	/* static predicate with source declaration */
+  MetaPredFlag = (UInt)0x00200000,	/* predicate subject to a meta declaration */
+  SyncPredFlag = (UInt)0x00100000,	/* has to synch before it can execute */
+  NumberDBPredFlag = (UInt)0x00080000,	/* entry for a number key */
+  AtomDBPredFlag = (UInt)0x00040000,	/* entry for an atom key */
+  GoalExPredFlag = (UInt)0x00020000,	/* predicate that is called by goal_expand */
+  TestPredFlag = (UInt)0x00010000,	/* is a test (optim. comit) */
+  AsmPredFlag = (UInt)0x00008000,	/* inline */
+  StandardPredFlag = (UInt)0x00004000,	/* system predicate */
+  DynamicPredFlag = (UInt)0x00002000,	/* dynamic predicate */
+  CPredFlag = (UInt)0x00001000,	/* written in C */
+  SafePredFlag = (UInt)0x00000800,	/* does not alter arguments */
+  CompiledPredFlag = (UInt)0x00000400,	/* is static */
+  IndexedPredFlag = (UInt)0x00000200,	/* has indexing code */
+  SpiedPredFlag = (UInt)0x00000100,	/* is a spy point */
+  BinaryPredFlag = (UInt)0x00000080,	/* test predicate */
+  TabledPredFlag = (UInt)0x00000040,	/* is tabled */
+  SequentialPredFlag = (UInt)0x00000020,	/* may not create parallel choice points! */
+  ProfiledPredFlag = (UInt)0x00000010,	/* pred is being profiled   */
+  BackCPredFlag = (UInt)0x00000008,    /*	Myddas Imported pred  */
+  ModuleTransparentPredFlag = (UInt)0x00000004,	/* ModuleTransparent pred  */
+  SWIEnvPredFlag = (UInt)0x00000002,	/* new SWI interface */
+  UDIPredFlag = (UInt)0x00000001	/* User Defined Indexing */
 } pred_flag;
 
 /* profile data */
@@ -902,7 +904,7 @@ typedef struct DB_STRUCT
 
 #define DBStructFlagsToDBStruct(X) ((DBRef)((char *)(X) - (CELL) &(((DBRef) NULL)->Flags)))
 
-#if MULTIPLE_STAACKS
+#if MULTIPLE_STACKS
 #define INIT_DBREF_COUNT(X) (X)->ref_count = 0
 #define  INC_DBREF_COUNT(X) (X)->ref_count++
 #define  DEC_DBREF_COUNT(X) (X)->ref_count--
@@ -1265,7 +1267,7 @@ Yap_GetTranslationProp(Atom at)
   while (p0 && p->KindOfPE != TranslationProperty)
     p = RepTranslationProp(p0 = p->NextOfPE);
   READ_UNLOCK(ae->ARWLock);
-  if (p0 == NIL) return NULL;
+  if (p0 == NIL) return (TranslationEntry *)NULL;
   return p;
 }
 
@@ -1579,6 +1581,8 @@ INLINE_ONLY EXTERN inline Prop GetPredPropByFuncAndModHavingLock(FunctorEntry *,
 INLINE_ONLY EXTERN inline Prop PredPropByFuncAndMod(FunctorEntry *, Term);
 INLINE_ONLY EXTERN inline Prop PredPropByAtomAndMod(Atom, Term);
 INLINE_ONLY EXTERN inline Prop GetPredPropByFuncHavingLock(FunctorEntry *, Term);
+INLINE_ONLY EXTERN inline Prop PredPropByFunc (Functor fe, Term cur_mod);
+INLINE_ONLY EXTERN inline Prop PredPropByAtom (Atom at, Term cur_mod);
 
 #ifdef THREADS
 
@@ -1653,10 +1657,10 @@ PredPropByFunc (Functor fe, Term cur_mod)
 {
   Prop p0;
 
-  WRITE_LOCK (fe->FRWLock);
+  FUNC_WRITE_LOCK (fe);
   p0 = GetPredPropByFuncHavingLock(fe, cur_mod);
   if (p0) {
-    WRITE_UNLOCK (fe->FRWLock);
+    FUNC_WRITE_UNLOCK (fe);
     return p0;
   }
   return Yap_NewPredPropByFunctor (fe, cur_mod);
@@ -1711,10 +1715,10 @@ PredPropByFuncAndMod (Functor fe, Term cur_mod)
 {
   Prop p0;
 
-  WRITE_LOCK (fe->FRWLock);
+  FUNC_WRITE_LOCK (fe);
   p0 = GetPredPropByFuncAndModHavingLock(fe, cur_mod);
   if (p0) {
-    WRITE_UNLOCK (fe->FRWLock);
+    FUNC_WRITE_UNLOCK (fe);
     return p0;
   }
   return Yap_NewPredPropByFunctor (fe, cur_mod);
@@ -1787,9 +1791,12 @@ PredPropByAtomAndMod (Atom at, Term cur_mod)
   { LOCK((Z)->PELock); (Z)->StatisticsForPred.NOfEntries=(I);(Z)->StatisticsForPred.NOfHeadSuccesses=pthread_self(); }
 #define UNLOCKPE(I,Z)						\
   ( (Z)->StatisticsForPred.NOfRetries=(I),  UNLOCK((Z)->PELock) )
+#elif YAPOR || THREADS
+#define PELOCK(I,Z) (LOCK((Z)->PELock))
+#define UNLOCKPE(I,Z)	(UNLOCK((Z)->PELock))
 #else
-#define PELOCK(I,Z) LOCK((Z)->PELock)
-#define UNLOCKPE(I,Z)	UNLOCK((Z)->PELock)
+#define PELOCK(I,Z)
+#define UNLOCKPE(I,Z)
 #endif
 
 INLINE_ONLY EXTERN inline void AddPropToAtom(AtomEntry *, PropEntry *p);

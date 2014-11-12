@@ -97,8 +97,10 @@
 #define REMOTE_ScannerExtraBlocks(wid) REMOTE(wid)->ScannerExtraBlocks_
 #define LOCAL_BallTerm LOCAL->BallTerm_
 #define REMOTE_BallTerm(wid) REMOTE(wid)->BallTerm_
-#define LOCAL_ActiveSignals LOCAL->ActiveSignals_
-#define REMOTE_ActiveSignals(wid) REMOTE(wid)->ActiveSignals_
+#define LOCAL_MaxActiveSignals LOCAL->MaxActiveSignals_
+#define REMOTE_MaxActiveSignals(wid) REMOTE(wid)->MaxActiveSignals_
+#define LOCAL_Signals LOCAL->Signals_
+#define REMOTE_Signals(wid) REMOTE(wid)->Signals_
 #define LOCAL_IPredArity LOCAL->IPredArity_
 #define REMOTE_IPredArity(wid) REMOTE(wid)->IPredArity_
 #define LOCAL_ProfEnd LOCAL->ProfEnd_
@@ -233,10 +235,6 @@
 #endif
 #define LOCAL_consult_level LOCAL->consult_level_
 #define REMOTE_consult_level(wid) REMOTE(wid)->consult_level_
-#if defined(YAPOR) || defined(THREADS)
-#define LOCAL_SignalLock LOCAL->SignalLock_
-#define REMOTE_SignalLock(wid) REMOTE(wid)->SignalLock_
-#endif
 
 #define LOCAL_LocalBase LOCAL->LocalBase_
 #define REMOTE_LocalBase(wid) REMOTE(wid)->LocalBase_
@@ -308,6 +306,10 @@
 
 #define LOCAL_matherror LOCAL->matherror_
 #define REMOTE_matherror(wid) REMOTE(wid)->matherror_
+#define LOCAL_mathtt LOCAL->mathtt_
+#define REMOTE_mathtt(wid) REMOTE(wid)->mathtt_
+#define LOCAL_mathstring LOCAL->mathstring_
+#define REMOTE_mathstring(wid) REMOTE(wid)->mathstring_
 #define LOCAL_CurrentError LOCAL->CurrentError_
 #define REMOTE_CurrentError(wid) REMOTE(wid)->CurrentError_
 
@@ -398,6 +400,13 @@
 #define REMOTE_ImportFAILCODE(wid) REMOTE(wid)->ImportFAILCODE_
 #define LOCAL_FunctorVar LOCAL->FunctorVar_
 #define REMOTE_FunctorVar(wid) REMOTE(wid)->FunctorVar_
+#if __ANDROID__
+
+#define LOCAL_assetManager LOCAL->assetManager_
+#define REMOTE_assetManager(wid) REMOTE(wid)->assetManager_
+#define LOCAL_InAssetDir LOCAL->InAssetDir_
+#define REMOTE_InAssetDir(wid) REMOTE(wid)->InAssetDir_
+#endif
 
 #define LOCAL_ibnds LOCAL->ibnds_
 #define REMOTE_ibnds(wid) REMOTE(wid)->ibnds_

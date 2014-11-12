@@ -18,6 +18,10 @@
 static char SccsId[] = "%W% %G%";
 #endif
 
+/**
+   @addtogroup YAPOS
+*/
+
 /*
  * In this routine we shall try to include the inevitably machine dependant
  * routines. These include, for the moment : Time, A rudimentary form of
@@ -60,6 +64,7 @@ static char SccsId[] = "%W% %G%";
 #if HAVE_GETPWNAM
 #include <pwd.h>
 #endif
+#include <ctype.h>
 #if HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -102,7 +107,7 @@ static Int p_srandom( USES_REGS1 );
 static Int p_alarm( USES_REGS1 );
 static Int p_getenv( USES_REGS1 );
 static Int p_putenv( USES_REGS1 );
-static void  set_fpu_exceptions(int);
+static bool set_fpu_exceptions(bool);
 #ifdef MACYAP
 static int chdir(char *);
 /* #define signal	skel_signal */
@@ -111,7 +116,7 @@ static int chdir(char *);
 
 void exit(int);
 
-#ifdef _WIN32
+#ifdef __WINDOWS__
 void
 Yap_WinError(char *yap_error)
 {
@@ -134,7 +139,36 @@ static int
 is_directory(char *FileName)
 {
 #ifdef _WIN32
-  DWORD dwAtts = GetFileAttributes(FileName);
+  char s[YAP_FILENAME_MAX+1];
+  char *s0 = FileName;
+  char *s1 = s;
+  int ch;
+
+  // win32 syntax
+  while ((ch = *s1++ = *s0++)) {
+    if (ch == '$') {
+      s1[-1] = '%';
+      ch = *s0;
+      // handle $(....)
+      if (ch == '{') {
+	s0++;
+	while ((ch = *s0++) != '}') {
+	  *s1++ = ch;
+	  if (ch == '\0') return FALSE;
+	}
+	*s1++ = '%';
+      } else {
+	while (((ch = *s1++ = *s0++) >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch == '-') || (ch >= '0' && ch <= '9') || (ch == '_'));
+	s1[-1] = '%';
+	*s1++ = ch;
+	if (ch == '\0') { s1--; s0--; }
+      }
+    } else if (ch == '/')
+      s1[-1] = '\\';
+  }
+  if (ExpandEnvironmentStrings(s, FileName, YAP_FILENAME_MAX) == 0)
+    return FALSE; 
+  DWORD dwAtts = GetFileAttributes( FileName );
   if (dwAtts == INVALID_FILE_ATTRIBUTES)
     return FALSE;
   return (dwAtts & FILE_ATTRIBUTE_DIRECTORY);
@@ -177,94 +211,120 @@ Yap_dir_separator (int ch)
 char *libdir = NULL;
 #endif
 
-void
-Yap_InitSysPath(void) {
+static Int
+initSysPath(Term tlib, Term tcommons) {
   CACHE_REGS
   int len;
-#if _MSC_VER || defined(__MINGW32__)
   int dir_done = FALSE;
   int commons_done = FALSE;
+  Int rcl, rcc;
+
+#if _MSC_VER || defined(__MINGW32__) || defined(__MSYS__)
   {
     char *dir;
     if ((dir = Yap_RegistryGetString("library")) &&
 	is_directory(dir)) {
-      Yap_PutValue(AtomSystemLibraryDir,
-		   MkAtomTerm(Yap_LookupAtom(dir)));
-      dir_done = TRUE;
+      if (! Yap_unify( tlib,
+		       MkAtomTerm(Yap_LookupAtom(dir))) )
+	return FALSE;
     }
     if ((dir = Yap_RegistryGetString("prolog_commons")) &&
 	is_directory(dir)) {
-      Yap_PutValue(AtomPrologCommonsDir,
-		   MkAtomTerm(Yap_LookupAtom(dir)));
-      commons_done = TRUE;
+      if (! Yap_unify( tcommons,
+		   MkAtomTerm(Yap_LookupAtom(dir))) )
+	return FALSE;
     }
   }
   if (dir_done && commons_done)
-    return;
+    return rcl && rcc;
 #endif
   strncpy(LOCAL_FileNameBuf, YAP_SHAREDIR, YAP_FILENAME_MAX);
-#if _MSC_VER || defined(__MINGW32__)
-  {
-    int buflen;
-    char *pt;
-
-    if (!is_directory(LOCAL_FileNameBuf)) {
-      /* couldn't find it where it was supposed to be,
-	 let's try using the executable */
-      if (!GetModuleFileNameEx( GetCurrentProcess(), NULL, LOCAL_FileNameBuf, YAP_FILENAME_MAX)) {
-	Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "could not find executable name"); 
-	/* do nothing */
-	return;
-      }
-      buflen = strlen(LOCAL_FileNameBuf);
-      pt = LOCAL_FileNameBuf+buflen;
-      while (*--pt != '\\') {
-	/* skip executable */
-	if (pt == LOCAL_FileNameBuf) {
-	  Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "could not find executable name");
-	  /* do nothing */
-	  return;
-	}
-      }
-      while (*--pt != '\\') {
-	/* skip parent directory "bin\\" */
-	if (pt == LOCAL_FileNameBuf) {
-	  Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "could not find executable name");
-	  /* do nothing */
-	}
-      }
-      /* now, this is a possible location for the ROOT_DIR, let's look for a share directory here */
-      pt[1] = '\0';
-      /* grosse */
-      strncat(LOCAL_FileNameBuf,"lib\\Yap",YAP_FILENAME_MAX);
-      libdir = Yap_AllocCodeSpace(strlen(LOCAL_FileNameBuf)+1);
-      strncpy(libdir, LOCAL_FileNameBuf, strlen(LOCAL_FileNameBuf)+1);
-      pt[1] = '\0';
-      strncat(LOCAL_FileNameBuf,"share",YAP_FILENAME_MAX);
+  strncat(LOCAL_FileNameBuf,"/", YAP_FILENAME_MAX);
+  len = strlen(LOCAL_FileNameBuf);
+  if (!dir_done) {
+    strncat(LOCAL_FileNameBuf, "Yap", YAP_FILENAME_MAX);
+    if (is_directory(LOCAL_FileNameBuf)) 
+    {
+      if (! Yap_unify( tlib,
+		   MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf))) )
+	return FALSE;
     }
   }
+  if (!commons_done) {
+    LOCAL_FileNameBuf[len] = '\0';
+    strncat(LOCAL_FileNameBuf, "PrologCommons", YAP_FILENAME_MAX);
+    if (is_directory(LOCAL_FileNameBuf)) {
+      if (! Yap_unify( tcommons,
+		       MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf))) )
+	return FALSE;
+    }
+  }
+  if (dir_done && commons_done)
+    return rcl && rcc;
+
+#if __WINDOWS__
+  {
+    size_t buflen;
+    char *pt;
+    
+    /* couldn't find it where it was supposed to be,
+       let's try using the executable */
+    if (!GetModuleFileName( NULL, LOCAL_FileNameBuf, YAP_FILENAME_MAX)) {
+      Yap_WinError( "could not find executable name" ); 
+      /* do nothing */
+      return FALSE;
+    }
+    buflen = strlen(LOCAL_FileNameBuf);
+    pt = LOCAL_FileNameBuf+buflen;
+    while (*--pt != '\\') {
+      /* skip executable */
+      if (pt == LOCAL_FileNameBuf) {
+	Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "could not find executable name");
+	/* do nothing */
+	return FALSE;
+      }
+    }
+    while (*--pt != '\\') {
+      /* skip parent directory "bin\\" */
+      if (pt == LOCAL_FileNameBuf) {
+	Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "could not find executable name");
+	/* do nothing */
+	return FALSE;
+      }
+    }
+    /* now, this is a possible location for the ROOT_DIR, let's look for a share directory here */
+    pt[1] = '\0';
+    /* grosse */
+    strncat(LOCAL_FileNameBuf,"lib\\Yap",YAP_FILENAME_MAX);
+    libdir = Yap_AllocCodeSpace(strlen(LOCAL_FileNameBuf)+1);
+    strncpy(libdir, LOCAL_FileNameBuf, strlen(LOCAL_FileNameBuf)+1);
+    pt[1] = '\0';
+    strncat(LOCAL_FileNameBuf,"share",YAP_FILENAME_MAX);
+  }
   strncat(LOCAL_FileNameBuf,"\\", YAP_FILENAME_MAX);
-#else
-  strncat(LOCAL_FileNameBuf,"/", YAP_FILENAME_MAX);
-#endif
   len = strlen(LOCAL_FileNameBuf);
   strncat(LOCAL_FileNameBuf, "Yap", YAP_FILENAME_MAX);
-#if _MSC_VER || defined(__MINGW32__)
-  if (!dir_done) 
+  if (!dir_done && is_directory(LOCAL_FileNameBuf)) {
+    if (! Yap_unify( tlib,
+		     MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf))) )
+      return FALSE;
+  }
+  LOCAL_FileNameBuf[len] = '\0';
+  strncat(LOCAL_FileNameBuf, "PrologCommons", YAP_FILENAME_MAX);
+  if (!commons_done && is_directory(LOCAL_FileNameBuf)) {
+    if (! Yap_unify( tcommons,
+		     MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf))) )
+      return FALSE;
+  }
 #endif
-    {
-      Yap_PutValue(AtomSystemLibraryDir,
-		   MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf)));
-    }
-#if _MSC_VER || defined(__MINGW32__)
-  if (!commons_done) 
-#endif
-    {
-      LOCAL_FileNameBuf[len] = '\0';
-      strncat(LOCAL_FileNameBuf, "PrologCommons", YAP_FILENAME_MAX);
-      Yap_PutValue(AtomPrologCommonsDir,
-		   MkAtomTerm(Yap_LookupAtom(LOCAL_FileNameBuf)));
-    }
+  return dir_done && commons_done;
+}
+
+
+static Int
+p_libraries_path( USES_REGS1 )
+{
+  return initSysPath( ARG1, ARG2 );
 }
 
 static Int
@@ -1055,6 +1115,66 @@ Yap_random (void)
 #endif
 }
 
+#if HAVE_RANDOM
+static Int
+p_init_random_state ( USES_REGS1 )
+{
+  register Term t0 = Deref (ARG1);
+  char *old, *new;
+
+  if (IsVarTerm (t0)) {
+    return(Yap_unify(ARG1,MkIntegerTerm((Int)current_seed)));
+  }
+  if(!IsNumTerm (t0))
+    return (FALSE);
+  if (IsIntTerm (t0))
+    current_seed = (unsigned int) IntOfTerm (t0);
+  else if (IsFloatTerm (t0))
+    current_seed  = (unsigned int) FloatOfTerm (t0);
+  else
+    current_seed  = (unsigned int) LongIntOfTerm (t0);
+  
+  new = (char *) malloc(256);
+  old = initstate(random(), new, 256);
+  return Yap_unify(ARG2, MkIntegerTerm((Int)old)) &&
+      Yap_unify(ARG3, MkIntegerTerm((Int)new));
+}
+
+static Int
+p_set_random_state ( USES_REGS1 )
+{
+  register Term t0 = Deref (ARG1);
+  char *old, * new;
+
+  if (IsVarTerm (t0)) {
+    return FALSE;
+  }
+  if (IsIntegerTerm (t0))
+    new = (char *) IntegerOfTerm (t0);
+  else
+    return FALSE;
+  old = setstate( new );
+  return Yap_unify(ARG2, MkIntegerTerm((Int)old));
+}
+
+static Int
+p_release_random_state ( USES_REGS1 )
+{
+  register Term t0 = Deref (ARG1);
+  char *old;
+
+  if (IsVarTerm (t0)) {
+    return FALSE;
+  }
+  if (IsIntegerTerm (t0))
+    old = (char *) IntegerOfTerm (t0);
+  else
+    return FALSE;
+  free( old );
+  return TRUE;
+}
+#endif
+
 static Int
 p_srandom ( USES_REGS1 )
 {
@@ -1079,7 +1199,7 @@ p_srandom ( USES_REGS1 )
   return (TRUE);
 }
 
-#if HAVE_SIGNAL
+#if HAVE_SIGNAL_H
 
 #include <signal.h>
 
@@ -1129,7 +1249,9 @@ static struct signame
 #endif
   { SIGILL,	"ill",    0},
   { SIGABRT,	"abrt",   0},
+#if HAVE_SIGFPE
   { SIGFPE,	"fpe",    PLSIG_THROW},
+#endif
 #ifdef SIGKILL
   { SIGKILL,	"kill",   0},
 #endif
@@ -1230,8 +1352,6 @@ Yap_signal_index(const char *name)
   return -1;
 }
 
-#if (defined(__svr4__) || defined(__SVR4))
-
 #if HAVE_SIGINFO_H
 #include <siginfo.h>
 #endif
@@ -1239,178 +1359,10 @@ Yap_signal_index(const char *name)
 #include <sys/ucontext.h>
 #endif
 
-static void HandleSIGSEGV(int, siginfo_t   *, ucontext_t *);
-static void HandleMatherr,  (int, siginfo_t   *, ucontext_t *);
-static void my_signal_info(int, void (*)(int, siginfo_t  *, ucontext_t *));
-static void my_signal(int, void (*)(int, siginfo_t  *, ucontext_t *));
-
-/* This routine believes there is a continuous space starting from the
-   HeapBase and ending on TrailTop */
+#if HAVE_SIGSEGV
 static void
-HandleSIGSEGV(int   sig,   siginfo_t   *sip, ucontext_t *uap)
+SearchForTrailFault(void *ptr, int sure)
 {
-
-#if !USE_SYSTEM_MALLOC
-  if (
-      sip->si_code != SI_NOINFO &&
-      sip->si_code == SEGV_MAPERR &&
-      (void *)(sip->si_addr) > (void *)(Yap_HeapBase) &&
-      (void *)(sip->si_addr) < (void *)(LOCAL_TrailTop+K64)) {
-    Yap_growtrail(K64, TRUE);
-  }  else
-#endif
-    {
-      Yap_Error(FATAL_ERROR, TermNil,
-		"likely bug in YAP, segmentation violation at %p", sip->si_addr);
-  }
-}
-
-
-static void
-HandleMatherr(int  sig, siginfo_t *sip, ucontext_t *uap)
-{
-  CACHE_REGS
-  yap_error_number error_no;
-
-  /* reset the registers so that we don't have trash in abstract machine */
-
-  switch(sip->si_code) {
-  case FPE_INTDIV:
-    error_no = EVALUATION_ERROR_ZERO_DIVISOR;
-    break;
-  case FPE_INTOVF:
-    error_no = EVALUATION_ERROR_INT_OVERFLOW;
-    break;
-  case FPE_FLTDIV:
-    error_no = EVALUATION_ERROR_ZERO_DIVISOR;
-    break;
-  case FPE_FLTOVF:
-    error_no = EVALUATION_ERROR_FLOAT_OVERFLOW;
-    break;
-  case FPE_FLTUND:
-    error_no = EVALUATION_ERROR_FLOAT_UNDERFLOW;
-    break;
-  case FPE_FLTRES:
-  case FPE_FLTINV:
-  case FPE_FLTSUB:
-  default:
-    error_no = EVALUATION_ERROR_UNDEFINED;
-  }
-  set_fpu_exceptions(0);
-  Yap_Error(error_no, TermNil, "");
-}
-
-
-#if HAVE_SIGSEGV && !defined(THREADS) 
-static void
-my_signal_info(int sig, void (*handler)(int, siginfo_t  *, ucontext_t *))
-{
-  struct sigaction sigact;
-
-  sigact.sa_handler = handler;
-  sigemptyset(&sigact.sa_mask);
-  sigact.sa_flags = SA_SIGINFO;
-
-  sigaction(sig,&sigact,NULL);
-}
-#endif
-
-static void
-my_signal(int sig, void (*handler)(int, siginfo_t *, ucontext_t *))
-{
-  struct sigaction sigact;
-
-  sigact.sa_handler=handler;
-  sigemptyset(&sigact.sa_mask);
-  sigact.sa_flags = 0;
-  sigaction(sig,&sigact,NULL);
-}
-
-#elif defined(__linux__)
-
-static RETSIGTYPE HandleMatherr(int);
-#if HAVE_SIGSEGV && !defined(THREADS) 
-static RETSIGTYPE HandleSIGSEGV(int,siginfo_t *,void *);
-static void my_signal_info(int, void (*)(int,siginfo_t *,void *));
-#endif
-static void my_signal(int, void (*)(int));
-
-/******** Handling floating point errors *******************/
-
-
-/* old code, used to work with matherror(), deprecated now:
-  char err_msg[256];
-  switch (x->type)
-    {
-    case DOMAIN:
-    case SING:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, "%s", x->name);
-      return(0);
-    case OVERFLOW:
-      Yap_Error(EVALUATION_ERROR_FLOAT_OVERFLOW, TermNil, "%s", x->name);
-      return(0);
-    case UNDERFLOW:
-      Yap_Error(EVALUATION_ERROR_FLOAT_UNDERFLOW, TermNil, "%s", x->name);
-      return(0);
-    case PLOSS:
-    case TLOSS:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, "%s(%g) = %g", x->name,
-	       x->arg1, x->retval);
-      return(0);
-    default:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, NULL);
-      return(0);
-    }
-  */
-
-
-static RETSIGTYPE
-HandleMatherr(int sig)
-{
-  CACHE_REGS
-#if HAVE_FETESTEXCEPT
-
-  /* This should work in Linux, but it doesn't seem to. */
-  
-  int raised = fetestexcept(FE_ALL_EXCEPT);
-
-  if (raised & FE_OVERFLOW) {
-    LOCAL_matherror  = EVALUATION_ERROR_FLOAT_OVERFLOW;
-  } else if (raised & (FE_INVALID|FE_INEXACT)) {
-    LOCAL_matherror  = EVALUATION_ERROR_UNDEFINED;
-  } else if (raised & FE_DIVBYZERO) {
-    LOCAL_matherror  = EVALUATION_ERROR_ZERO_DIVISOR;
-  } else if (raised & FE_UNDERFLOW) {
-    LOCAL_matherror  = EVALUATION_ERROR_FLOAT_UNDERFLOW;
-  } else
-#endif
-    LOCAL_matherror  = EVALUATION_ERROR_UNDEFINED;
-  /* something very bad happened on the way to the forum */
-  set_fpu_exceptions(FALSE);
-  Yap_Error(LOCAL_matherror , TermNil, "");
-}
-
-#if HAVE_SIGSEGV && !defined(THREADS) 
-static void
-my_signal_info(int sig, void (*handler)(int,siginfo_t *,void *))
-{
-  struct sigaction sigact;
-
-  sigact.sa_sigaction = handler;
-  sigemptyset(&sigact.sa_mask);
-#if HAVE_SIGINFO
-  sigact.sa_flags = SA_SIGINFO;
-#else
-  sigact.sa_flags = 0;
-#endif
-
-  sigaction(sig,&sigact,NULL);
-}
-
-static void
-SearchForTrailFault(siginfo_t *siginfo)
-{
-  void *ptr = siginfo->si_addr;
 
   /* If the TRAIL is very close to the top of mmaped allocked space,
      then we can try increasing the TR space and restarting the
@@ -1427,396 +1379,236 @@ SearchForTrailFault(siginfo_t *siginfo)
     /*    my_signal_info(SIGSEGV, HandleSIGSEGV); */
   } else
 #endif /* OS_HANDLES_TR_OVERFLOW */
-    {
+    if (sure)
       Yap_Error(FATAL_ERROR, TermNil,
 		"tried to access illegal address %p!!!!", ptr);
-  }
+    else
+      Yap_Error(FATAL_ERROR, TermNil,
+		"likely bug in YAP, segmentation violation");
 }
 
-static RETSIGTYPE
-HandleSIGSEGV(int   sig, siginfo_t *siginfo, void *context)
+
+/* This routine believes there is a continuous space starting from the
+   HeapBase and ending on TrailTop */
+static void
+HandleSIGSEGV(int   sig,   void   *sipv, void *uap)
 {
+  CACHE_REGS
+
+  void *ptr = TR;
+  int sure = FALSE;
   if (LOCAL_PrologMode & ExtendStackMode) {
     Yap_Error(FATAL_ERROR, TermNil, "OS memory allocation crashed at address %p, bailing out\n",LOCAL_TrailTop);
   }
-  SearchForTrailFault(siginfo);
-}
+#if (defined(__svr4__) || defined(__SVR4))
+  siginfo_t *sip = sipv;
+  if (
+      sip->si_code != SI_NOINFO &&
+      sip->si_code == SEGV_MAPERR) {
+    ptr = sip->si_addr;
+    sure = TRUE;
+  }
+#elif __linux__
+  siginfo_t *sip = sipv;
+  ptr = sip->si_addr;
+  sure = TRUE;
 #endif
-
-static void
-my_signal(int sig, void (*handler)(int))
-{
-  struct sigaction sigact;
-
-  sigact.sa_handler=handler;
-  sigemptyset(&sigact.sa_mask);
-  sigact.sa_flags = 0;
-
-  sigaction(sig,&sigact,NULL);
+  SearchForTrailFault( ptr, sure );
 }
+#endif /* SIGSEGV */
 
-#else /* if not (defined(__svr4__) || defined(__SVR4)) */
-
-static RETSIGTYPE HandleMatherr(int);
-static RETSIGTYPE HandleSIGSEGV(int);
-static void my_signal_info(int, void (*)(int));
-static void my_signal(int, void (*)(int));
-
-/******** Handling floating point errors *******************/
-
-
-/* old code, used to work with matherror(), deprecated now:
-  char err_msg[256];
-  switch (x->type)
-    {
-    case DOMAIN:
-    case SING:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, "%s", x->name);
-      return(0);
-    case OVERFLOW:
-      Yap_Error(EVALUATION_ERROR_FLOAT_OVERFLOW, TermNil, "%s", x->name);
-      return(0);
-    case UNDERFLOW:
-      Yap_Error(EVALUATION_ERROR_FLOAT_UNDERFLOW, TermNil, "%s", x->name);
-      return(0);
-    case PLOSS:
-    case TLOSS:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, "%s(%g) = %g", x->name,
-	       x->arg1, x->retval);
-      return(0);
-    default:
-      Yap_Error(EVALUATION_ERROR_UNDEFINED, TermNil, NULL);
-      return(0);
-    }
-  */
-
-
-#if HAVE_FENV_H
-#include <fenv.h>
-#endif
-
-static RETSIGTYPE
-HandleMatherr(int sig)
+yap_error_number
+Yap_MathException__( USES_REGS1 )
 {
-  CACHE_REGS
 #if HAVE_FETESTEXCEPT
-  /* This should work in Linux, but it doesn't seem to. */
-  
-  int raised = fetestexcept(FE_ALL_EXCEPT);
+  int raised;
 
-  if (raised & FE_OVERFLOW) {
-    LOCAL_matherror  = EVALUATION_ERROR_FLOAT_OVERFLOW;
-  } else if (raised & (FE_INVALID|FE_INEXACT)) {
-    LOCAL_matherror  = EVALUATION_ERROR_UNDEFINED;
-  } else if (raised & FE_DIVBYZERO) {
-    LOCAL_matherror  = EVALUATION_ERROR_ZERO_DIVISOR;
-  } else if (raised & FE_UNDERFLOW) {
-    LOCAL_matherror  = EVALUATION_ERROR_FLOAT_UNDERFLOW;
-  } else
+  // #pragma STDC FENV_ACCESS ON
+  if ((raised = fetestexcept( FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW)) ) {
+
+	feclearexcept(FE_ALL_EXCEPT);
+	 if (raised & FE_OVERFLOW) {
+	     return  EVALUATION_ERROR_FLOAT_OVERFLOW;
+	  } else if (raised & FE_DIVBYZERO) {
+	      return  EVALUATION_ERROR_ZERO_DIVISOR;
+	  } else if (raised & FE_UNDERFLOW) {
+	      return  EVALUATION_ERROR_FLOAT_UNDERFLOW;
+	  //} else if (raised & (FE_INVALID|FE_INEXACT)) {
+	  //    return  EVALUATION_ERROR_UNDEFINED;
+	  } else {
+	      return  EVALUATION_ERROR_UNDEFINED;
+	  }
+  }
+#elif _WIN32 && FALSE
+  unsigned int raised;
+  int err;
+
+    // Show original FP control word and do calculation.
+    err = _controlfp_s(&raised, 0, 0);
+    if (err) {
+      return  EVALUATION_ERROR_UNDEFINED;
+    }
+    if (raised ) {
+
+	feclearexcept(FE_ALL_EXCEPT);
+	 if (raised & FE_OVERFLOW) {
+	     return  EVALUATION_ERROR_FLOAT_OVERFLOW;
+	  } else if (raised & FE_DIVBYZERO) {
+	      return  EVALUATION_ERROR_ZERO_DIVISOR;
+	  } else if (raised & FE_UNDERFLOW) {
+	      return  EVALUATION_ERROR_FLOAT_UNDERFLOW;
+	  //} else if (raised & (FE_INVALID|FE_INEXACT)) {
+	  //    return  EVALUATION_ERROR_UNDEFINED;
+	  } else {
+	      return  EVALUATION_ERROR_UNDEFINED;
+	  }
+  }
+#elif (defined(__svr4__) || defined(__SVR4))
+  switch(sip->si_code) {
+  case FPE_INTDIV:
+    return EVALUATION_ERROR_ZERO_DIVISOR;
+    break;
+  case FPE_INTOVF:
+    return EVALUATION_ERROR_INT_OVERFLOW;
+    break;
+  case FPE_FLTDIV:
+    return EVALUATION_ERROR_ZERO_DIVISOR;
+    break;
+  case FPE_FLTOVF:
+    return EVALUATION_ERROR_FLOAT_OVERFLOW;
+    break;
+  case FPE_FLTUND:
+    return EVALUATION_ERROR_FLOAT_UNDERFLOW;
+    break;
+  case FPE_FLTRES:
+  case FPE_FLTINV:
+  case FPE_FLTSUB:
+  default:
+    return EVALUATION_ERROR_UNDEFINED;
+  }
+  set_fpu_exceptions(0);
 #endif
-    LOCAL_matherror  = EVALUATION_ERROR_UNDEFINED;
-  /* something very bad happened on the way to the forum */
-  set_fpu_exceptions(FALSE);
-  Yap_Error(LOCAL_matherror , TermNil, "");
+
+  return LOCAL_matherror;
 }
 
-static void
-SearchForTrailFault(void)
+static Int
+p_fpe_error( USES_REGS1 )
 {
-  /* If the TRAIL is very close to the top of mmaped allocked space,
-     then we can try increasing the TR space and restarting the
-     instruction. In the worst case, the system will
-     crash again
-     */
-#ifdef DEBUG
-  /*  fprintf(stderr,"Catching a sigsegv at %p with %p\n", TR, TrailTop); */
-#endif
-#if  OS_HANDLES_TR_OVERFLOW && !USE_SYSTEM_MALLOC
-  if ((TR > (tr_fr_ptr)LOCAL_TrailTop-1024  && 
-       TR < (tr_fr_ptr)LOCAL_TrailTop+(64*1024))|| Yap_DBTrailOverflow()) {
-    long trsize = K64;
-
-    while ((CELL)TR > (CELL)LOCAL_TrailTop+trsize) {
-      trsize += K64;
-    }
-    if (!Yap_growtrail(trsize, TRUE)) {
-      Yap_Error(OUT_OF_TRAIL_ERROR, TermNil, "YAP failed to reserve %ld bytes in growtrail", K64);
-    }
-    /* just in case, make sure the OS keeps the signal handler. */
-    /*    my_signal_info(SIGSEGV, HandleSIGSEGV); */
-  } else
-#endif /* OS_HANDLES_TR_OVERFLOW */
-    Yap_Error(INTERNAL_ERROR, TermNil,
-	  "likely bug in YAP, segmentation violation");
+  Yap_Error(LOCAL_matherror, LOCAL_mathtt, LOCAL_mathstring);
+  LOCAL_matherror = YAP_NO_ERROR;
+  LOCAL_mathtt = TermNil;
+  LOCAL_mathstring = NULL;
+  return FALSE;
 }
 
-static RETSIGTYPE
-HandleSIGSEGV(int   sig)
+#if HAVE_SIGFPE
+static void
+HandleMatherr(int  sig, void *sipv, void *uapv)
 {
   CACHE_REGS
-  if (LOCAL_PrologMode & ExtendStackMode) {
-    Yap_Error(FATAL_ERROR, TermNil, "OS memory allocation crashed at address %p, bailing out\n",LOCAL_TrailTop);
-  }
-  SearchForTrailFault();
+  LOCAL_matherror = Yap_MathException( );
+  /* reset the registers so that we don't have trash in abstract machine */
+  Yap_external_signal( worker_id, YAP_FPE_SIGNAL );
 }
 
-#if HAVE_SIGACTION
+#endif /* SIGFPE */
 
+
+
+typedef void (*signal_handler_t)(int, void *, void *);
+
+#if HAVE_SIGACTION 
 static void
-my_signal_info(int sig, void (*handler)(int))
+my_signal_info(int sig, void * handler)
 {
   struct sigaction sigact;
 
   sigact.sa_handler = handler;
   sigemptyset(&sigact.sa_mask);
-#if HAVE_SIGINFO
   sigact.sa_flags = SA_SIGINFO;
-#else
-  sigact.sa_flags = 0;
-#endif
 
   sigaction(sig,&sigact,NULL);
 }
 
 static void
-my_signal(int sig, void (*handler)(int))
+my_signal(int sig, void * handler)
 {
   struct sigaction sigact;
 
-  sigact.sa_handler=handler;
+  sigact.sa_handler= (void *)handler;
   sigemptyset(&sigact.sa_mask);
   sigact.sa_flags = 0;
-
   sigaction(sig,&sigact,NULL);
 }
 
 #else
 
 static void
-my_signal(int sig, void (*handler)(int))
+my_signal(int sig, void *handler)
 {
-  signal(sig, handler);
+  signal(sig,  handler);
 }
 
 static void
-my_signal_info(sig, handler)
-int sig;
-void (*handler)(int);
+my_signal_info(int sig, void *handler)
 {
-  if(signal(sig, handler) == SIG_ERR)
+  if(signal(sig, (void *)handler) == SIG_ERR)
     exit(1);
 }
-#endif /* __linux__ */
 
-#endif /* (defined(__svr4__) || defined(__SVR4)) */
-
-
-static int
-InteractSIGINT(int ch) {
-  CACHE_REGS
-  switch (ch) {
-  case 'a':
-    /* abort computation */
-    if (LOCAL_PrologMode & (GCMode|ConsoleGetcMode|CritMode)) {
-      LOCAL_PrologMode |= AbortMode;
-      return -1;
-    } else {
-      Yap_Error(PURE_ABORT, TermNil, "abort from console");
-    }
-    LOCAL_PrologMode &= ~AsyncIntMode;
-    Yap_RestartYap( 1 );
-    return -1;
-  case 'b':
-    /* continue */
-    Yap_signal (YAP_BREAK_SIGNAL);
-    return 1;
-  case 'c':
-    /* continue */
-    return 1;
-  case 'd':
-    Yap_signal (YAP_DEBUG_SIGNAL);
-    /* enter debug mode */
-    return 1;
-  case 'e':
-    /* exit */
-    Yap_exit(0);
-    return -1;
-  case 'g':
-    /* exit */
-    Yap_signal (YAP_STACK_DUMP_SIGNAL);
-    return -1;
-  case 't':
-    /* start tracing */
-    Yap_signal (YAP_TRACE_SIGNAL);
-    return 1;
-#ifdef LOW_LEVEL_TRACER
-  case 'T':
-    toggle_low_level_trace();
-    return 1;
 #endif
-  case 's':
-    /* show some statistics */
-    Yap_signal (YAP_STATISTICS_SIGNAL);
-    return 1;
-  case EOF:
-    return(0);
-    break;
-  case 'h':
-  case '?':
-  default:
-    /* show an helpful message */
-    fprintf(GLOBAL_stderr, "Please press one of:\n");
-    fprintf(GLOBAL_stderr, "  a for abort\n  c for continue\n  d for debug\n");
-    fprintf(GLOBAL_stderr, "  e for exit\n  g for stack dump\n  s for statistics\n  t for trace\n");
-    fprintf(GLOBAL_stderr, "  b for break\n");
-    return(0);
-  }
-}
-
-/*
-  This function talks to the user about a signal. We assume we are in
-  the context of the main Prolog thread (trivial in Unix, but hard in WIN32)
-*/ 
-static int
-ProcessSIGINT(void)
-{
-  CACHE_REGS
-  int ch, out;
-
-  LOCAL_PrologMode |= AsyncIntMode;
-  do {
-    ch = Yap_GetCharForSIGINT();
-  } while (!(out = InteractSIGINT(ch)));
-  LOCAL_PrologMode &= ~AsyncIntMode;
-  LOCAL_PrologMode &= ~InterruptMode;
-  return(out);
-}
-
-#if !_MSC_VER && !defined(__MINGW32__)
-
-#if HAVE_SIGNAL
-static int             snoozing = FALSE;
-#endif
-
-/* This function is called from the signal handler to process signals.
-   We assume we are within the context of the signal handler, whatever
-   that might be
-*/
-static RETSIGTYPE
-#if (defined(__svr4__) || defined(__SVR4))
-HandleSIGINT (int sig, siginfo_t   *x, ucontext_t *y)
-#else
-HandleSIGINT (int sig)
-#endif
-{
-  CACHE_REGS
-    /* fprintf(stderr,"mode = %x\n",LOCAL_PrologMode); */
-  my_signal(SIGINT, HandleSIGINT);
-  /* do this before we act */
-#if HAVE_ISATTY
-  if (!isatty(0)) {
-    Yap_Error(INTERRUPT_ERROR,MkIntTerm(SIGINT),NULL);
-    return;
-  }
-#endif
-  if (LOCAL_InterruptsDisabled) {
-    return;
-  }
-  if (LOCAL_PrologMode & ConsoleGetcMode) {
-    LOCAL_PrologMode |= InterruptMode;
-    return;
-  }
-#ifdef HAVE_SETBUF
-  /* make sure we are not waiting for the end of line */
-  YP_setbuf (stdin, NULL);
-#endif
-  if (snoozing) {
-    snoozing = FALSE;
-    return;
-  }
-  ProcessSIGINT();
-}
-#endif
-
-#if !defined(_WIN32)
-/* this routine is called if the system activated the alarm */
-static RETSIGTYPE
-#if (defined(__svr4__) || defined(__SVR4))
-HandleALRM (int s, siginfo_t   *x, ucontext_t *y)
-#else
-HandleALRM(int s)
-#endif
-{
-  my_signal (SIGALRM, HandleALRM);
-  /* force the system to creep */
-  Yap_signal (YAP_ALARM_SIGNAL);
-  /* now, say what is going on */
-  Yap_PutValue(AtomAlarm, MkAtomTerm(AtomTrue));
-}
-#endif
-
-
-#if !defined(_WIN32)
-/* this routine is called if the system activated the alarm */
-static RETSIGTYPE
-#if (defined(__svr4__) || defined(__SVR4))
-HandleVTALRM (int s, siginfo_t   *x, ucontext_t *y)
-#else
-HandleVTALRM(int s)
-#endif
-{
-  my_signal (SIGVTALRM, HandleVTALRM);
-  /* force the system to creep */
-  Yap_signal (YAP_VTALARM_SIGNAL);
-  /* now, say what is going on */
-  Yap_PutValue(AtomAlarm, MkAtomTerm(AtomTrue));
-}
-#endif
-
-
-/*
- * This function is called after a normal interrupt had been caught.
- * It allows 6 possibilities: abort, continue, trace, debug, help, exit.
- */
 
 #if !defined(LIGHT) && !_MSC_VER && !defined(__MINGW32__) && !defined(LIGHT) 
 static RETSIGTYPE
-#if (defined(__svr4__) || defined(__SVR4))
-ReceiveSignal (int s, siginfo_t   *x, ucontext_t *y)
-#else
-ReceiveSignal (int s)
-#endif
+ReceiveSignal (int s, void *x, void *y)
 {
+  CACHE_REGS
+  LOCAL_PrologMode |= InterruptMode;
+  my_signal (s, ReceiveSignal);
   switch (s)
     {
-#ifndef MPW
-    case SIGFPE:
-      set_fpu_exceptions(FALSE);
-      Yap_Error (SYSTEM_ERROR, TermNil, "floating point exception ]");
+      case SIGINT:
+      // always direct SIGINT to console
+      Yap_external_signal( 0, YAP_INT_SIGNAL );
       break;
+      case SIGALRM:
+      Yap_external_signal( worker_id, YAP_ALARM_SIGNAL );
+      break;
+      case SIGVTALRM:
+      Yap_external_signal( worker_id, YAP_VTALARM_SIGNAL );
+      break;
+#ifndef MPW
+#ifdef HAVE_SIGFPE
+    case SIGFPE:
+      Yap_external_signal( worker_id, YAP_FPE_SIGNAL );
+      break;
+#endif
 #endif
 #if !defined(LIGHT) && !defined(_WIN32)
       /* These signals are not handled by WIN32 and not the Macintosh */
     case SIGQUIT:
     case SIGKILL:
+      LOCAL_PrologMode &= ~InterruptMode;
       Yap_Error(INTERRUPT_ERROR,MkIntTerm(s),NULL);
+      break;
 #endif
 #ifdef SIGUSR1
     case SIGUSR1:
       /* force the system to creep */
-      Yap_signal (YAP_USR1_SIGNAL);
+      Yap_external_signal ( worker_id, YAP_USR1_SIGNAL);
       break;
 #endif /* defined(SIGUSR1) */
 #ifdef SIGUSR2
     case SIGUSR2:
       /* force the system to creep */
-      Yap_signal (YAP_USR2_SIGNAL);
+      Yap_external_signal ( worker_id, YAP_USR2_SIGNAL);
       break;
 #endif /* defined(SIGUSR2) */
 #ifdef SIGPIPE
     case SIGPIPE:
       /* force the system to creep */
-      Yap_signal (YAP_PIPE_SIGNAL);
+      Yap_external_signal ( worker_id, YAP_PIPE_SIGNAL);
       break;
 #endif /* defined(SIGPIPE) */
 #ifdef SIGHUP
@@ -1826,24 +1618,33 @@ ReceiveSignal (int s)
       break;
 #endif /* defined(SIGHUP) */
     default:
-      fprintf(GLOBAL_stderr, "\n[ Unexpected signal ]\n");
-      exit (EXIT_FAILURE);
+      fprintf(stderr, "\n[ Unexpected signal ]\n");
+      exit (s);
     }
+  LOCAL_PrologMode &= ~InterruptMode;
 }
 #endif
 
 #if (_MSC_VER || defined(__MINGW32__))
 static BOOL WINAPI
 MSCHandleSignal(DWORD dwCtrlType) {
-  CACHE_REGS
+#if THREADS
+  if (REMOTE_InterruptsDisabled(0)) {
+#else
   if (LOCAL_InterruptsDisabled) {
+#endif
     return FALSE;
   }
   switch(dwCtrlType) {
   case CTRL_C_EVENT:
   case CTRL_BREAK_EVENT:
-    Yap_signal(YAP_ALARM_SIGNAL);
-    LOCAL_PrologMode |= InterruptMode;
+#if THREADS
+    Yap_external_signal(0, YAP_WINTIMER_SIGNAL);
+    REMOTE_PrologMode(0) |= InterruptMode;
+#else
+   Yap_signal(YAP_WINTIMER_SIGNAL);
+   LOCAL_PrologMode |= InterruptMode;
+#endif
     return(TRUE);
   default:
     return(FALSE);
@@ -1862,8 +1663,8 @@ InitSignals (void)
     my_signal (SIGUSR1, ReceiveSignal);
     my_signal (SIGUSR2, ReceiveSignal);
     my_signal (SIGHUP,  ReceiveSignal);
-    my_signal (SIGALRM, HandleALRM);
-    my_signal (SIGVTALRM, HandleVTALRM);
+    my_signal (SIGALRM, ReceiveSignal);
+    my_signal (SIGVTALRM, ReceiveSignal);
 #endif
 #ifdef SIGPIPE
     my_signal (SIGPIPE, ReceiveSignal);
@@ -1872,22 +1673,16 @@ InitSignals (void)
     signal (SIGINT, SIG_IGN);
     SetConsoleCtrlHandler(MSCHandleSignal,TRUE);
 #else
-    my_signal (SIGINT, HandleSIGINT);
+    my_signal (SIGINT, ReceiveSignal);
 #endif
-#ifndef MPW
+#ifdef HAVE_SIGFPE
     my_signal (SIGFPE, HandleMatherr);
 #endif
-#if HAVE_SIGSEGV && !defined(THREADS) 
+#if HAVE_SIGSEGV
     my_signal_info (SIGSEGV, HandleSIGSEGV);
 #endif
 #ifdef YAPOR_COW
     signal(SIGCHLD, SIG_IGN);  /* avoid ghosts */ 
-#endif
-  } else {
-#if OS_HANDLES_TR_OVERFLOW
-#if HAVE_SIGSEGV && !defined(THREADS)
-    my_signal_info (SIGSEGV, HandleSIGSEGV);
-#endif    
 #endif
   }
 }
@@ -1923,32 +1718,9 @@ Yap_volume_header(char *file)
 }
 
 
-int Yap_getcwd(const char *buf, int len)
+char * Yap_getcwd(const char *cwd, size_t cwdlen)
 {
-  CACHE_REGS
-#if __simplescalar__
-  /* does not implement getcwd */
-  strncpy(Yap_buf,GLOBAL_pwd,len);
-#elif HAVE_GETCWD
-  if (getcwd ((char *)buf, len) == NULL) {
-#if HAVE_STRERROR
-    Yap_Error(OPERATING_SYSTEM_ERROR, ARG1, "%s in getcwd/1", strerror(errno));
-#else
-    Yap_Error(OPERATING_SYSTEM_ERROR, ARG1, "error %d in getcwd/1", errno);
-#endif
-    return FALSE;
-  }
-#else
-  if (getwd (buf) == NULL) {
-#if HAVE_STRERROR
-    Yap_Error(OPERATING_SYSTEM_ERROR, ARG1, "%s in getcwd/1", strerror(errno));
-#else
-    Yap_Error(OPERATING_SYSTEM_ERROR, ARG1, "in getcwd/1");
-#endif
-    return FALSE;
-  }
-#endif
-  return TRUE;
+  return PL_cwd((char *)cwd, cwdlen);
 }
 
 /******
@@ -1962,6 +1734,9 @@ TrueFileName (char *source, char *root, char *result, int in_lib, int expand_roo
   char ares1[YAP_FILENAME_MAX];
 
   result[0] = '\0';
+  if (strlen(source) >= YAP_FILENAME_MAX) {
+    Yap_Error(OPERATING_SYSTEM_ERROR, TermNil, "%s in true_file-name is larger than the buffer size (%d bytes)", source, strlen(source));    
+  }
 #if defined(__MINGW32__) || _MSC_VER
   /* step 0: replace / by \ */
   strncpy(ares1, source, YAP_FILENAME_MAX);
@@ -2016,11 +1791,22 @@ TrueFileName (char *source, char *root, char *result, int in_lib, int expand_roo
     int ch;
     char *s;
     char *res0 = source+1;
-
-    while ((ch = *res0) && is_valid_env_char (ch)) {
+    if (*res0 == '{') {
       res0++;
+      while ((ch = *res0) && is_valid_env_char (ch) && ch != '}') {
+	res0++;
+      }
+      *res0++ = '\0';      
+      if (ch == '}') {
+	// {...}
+	source++;
+	ch = *res0;
+      }
+    } else {
+      while ((ch = *res0) && is_valid_env_char (ch)) {
+	res0++;
+      }
     }
-    *res0 = '\0';
     if (!(s = (char *) getenv (source+1))) {
       return FALSE;
     }
@@ -2086,7 +1872,7 @@ TrueFileName (char *source, char *root, char *result, int in_lib, int expand_roo
 	  strncpy (result, ares1, YAP_FILENAME_MAX);
 	}
       } else {
-	strncpy (result, ares1, YAP_FILENAME_MAX);
+	      strncpy (result, ares1, YAP_FILENAME_MAX);
 	close(tmpf);
       }
     } else {
@@ -2202,7 +1988,13 @@ p_true_file_name3 ( USES_REGS1 )
 }
 
 /* Executes $SHELL under Prolog */
+/** @pred  sh 
 
+
+Creates a new shell interaction.
+
+ 
+*/
 static Int
 p_sh ( USES_REGS1 )
 {				/* sh				 */
@@ -2233,32 +2025,50 @@ p_sh ( USES_REGS1 )
 #endif
 }
 
+/** shell(+Command:text, -Status:integer) is det.
+
+Run an external command and wait for its completion.
+*/
 static Int
 p_shell ( USES_REGS1 )
 {				/* '$shell'(+SystCommand)			 */
 #if _MSC_VER || defined(__MINGW32__)
-  Yap_Error(SYSTEM_ERROR,TermNil,"shell not available in this configuration");
+  char *cmd;
+  term_t A1 = Yap_InitSlot(ARG1 PASS_REGS);
+  if ( PL_get_chars(A1, &cmd, CVT_ALL|REP_FN|CVT_EXCEPTION) )
+  { int rval = System(cmd);
+
+    return rval == 0;
+  }
+
   return FALSE;
 #else
 #if HAVE_SYSTEM 
   char *shell;
   register int bourne = FALSE;
   Term t1 = Deref (ARG1);
+  const char *cmd;
 
   shell = (char *) getenv ("SHELL");
   if (!strcmp (shell, "/bin/sh"))
     bourne = TRUE;
   if (shell == NIL)
     bourne = TRUE;
+  if (IsAtomTerm(t1))
+    cmd = RepAtom(AtomOfTerm(t1))->StrOfAE;
+  else if (IsStringTerm(t1))
+    cmd = StringOfTerm(t1);
+  else
+    return FALSE;
   /* Yap_CloseStreams(TRUE); */
   if (bourne)
-    return system(RepAtom(AtomOfTerm(t1))->StrOfAE) == 0;
+    return system( cmd ) == 0;
   else {
     int status = -1;
     int child = fork ();
 
     if (child == 0) {			/* let the children go */
-      if (!execl (shell, shell, "-c", RepAtom(AtomOfTerm(t1))->StrOfAE , NULL)) {
+      if (!execl (shell, shell, "-c", cmd , NULL)) {
 	exit(-1);
       }
       exit(TRUE);
@@ -2293,18 +2103,63 @@ p_shell ( USES_REGS1 )
 #endif /* _MSC_VER */
 }
 
+/** system(+Command:text).
+
+Run an external command.
+*/
+
 static Int
 p_system ( USES_REGS1 )
 {				/* '$system'(+SystCommand)	       */
-#ifdef HAVE_SYSTEM
+#if _MSC_VER || defined(__MINGW32__)
+  char *cmd;
+  term_t A1 = Yap_InitSlot(ARG1 PASS_REGS);
+  if ( PL_get_chars(A1, &cmd, CVT_ALL|REP_FN|CVT_EXCEPTION) )
+    { STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    ZeroMemory( &pi, sizeof(pi) );
+
+    // Start the child process. 
+    if( !CreateProcess( NULL,   // No module name (use command line)
+        cmd,            // Command line
+        NULL,           // Process handle not inheritable
+        NULL,           // Thread handle not inheritable
+        FALSE,          // Set handle inheritance to FALSE
+        0,              // No creation flags
+        NULL,           // Use parent's environment block
+        NULL,           // Use parent's starting directory 
+        &si,            // Pointer to STARTUPINFO structure
+        &pi )           // Pointer to PROCESS_INFORMATION structure
+    ) 
+    {
+      Yap_Error( SYSTEM_ERROR, ARG1,  "CreateProcess failed (%d).\n", GetLastError() );
+        return FALSE;
+    }
+    // Wait until child process exits.
+    WaitForSingleObject( pi.hProcess, INFINITE );
+
+    // Close process and thread handles. 
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+
+    return TRUE;
+  }
+
+  return FALSE;
+#elif HAVE_SYSTEM
   Term t1 = Deref (ARG1);
-  char *s;
+  const char *s;
 
   if (IsVarTerm(t1)) {
     Yap_Error(INSTANTIATION_ERROR,t1,"argument to system/1 unbound");
     return FALSE;
   } else if (IsAtomTerm(t1)) {
     s = RepAtom(AtomOfTerm(t1))->StrOfAE;
+  } else if (IsStringTerm(t1)) {
+    s = StringOfTerm(t1);
   } else {
     if (!Yap_GetName (LOCAL_FileNameBuf, YAP_FILENAME_MAX, t1)) {
       Yap_Error(TYPE_ERROR_ATOM,t1,"argument to system/1");
@@ -2343,6 +2198,10 @@ p_system ( USES_REGS1 )
 
 
 /* Rename a file */
+/** @pred  rename(+ _F_,+ _G_) 
+
+Renames file  _F_ to  _G_.
+*/
 static Int
 p_mv ( USES_REGS1 )
 {				/* rename(+OldName,+NewName)   */
@@ -2509,7 +2368,7 @@ DoTimerThread(LPVOID targ)
   }
   if (WaitForSingleObject(htimer, INFINITE) != WAIT_OBJECT_0)
     fprintf(stderr,"WaitForSingleObject failed (%ld)\n", GetLastError());
-  Yap_signal (YAP_ALARM_SIGNAL);
+  Yap_signal (YAP_WINTIMER_SIGNAL);
   /* now, say what is going on */
   Yap_PutValue(AtomAlarm, MkAtomTerm(AtomTrue));
   ExitThread(1);
@@ -2545,14 +2404,11 @@ p_alarm( USES_REGS1 )
   i1 = IntegerOfTerm(t);
   i2 = IntegerOfTerm(t2);
   if (i1 == 0 && i2 == 0) {
-    LOCK(LOCAL_SignalLock);
-    if (LOCAL_ActiveSignals & YAP_ALARM_SIGNAL) {
-      LOCAL_ActiveSignals &= ~YAP_ALARM_SIGNAL;
-      if (!LOCAL_ActiveSignals) {
-	CalculateStackGap( PASS_REGS1 );
-      }
-    }
-    UNLOCK(LOCAL_SignalLock);
+#if _WIN32
+    Yap_get_signal( YAP_WINTIMER_SIGNAL );
+#else
+    Yap_get_signal( YAP_ALARM_SIGNAL );
+#endif
   }    
 #if _MSC_VER || defined(__MINGW32__)
   {
@@ -2703,14 +2559,23 @@ p_virtual_alarm( USES_REGS1 )
 #endif
 
 /* by default Linux with glibc is IEEE compliant anyway..., but we will pretend it is not. */
-static void
-set_fpu_exceptions(int flag)
+static bool
+set_fpu_exceptions(bool flag)
 {
   if (flag) {
-#if defined(__hpux)
+#if HAVE_FESETEXCEPTFLAG
+      fexcept_t excepts;
+      return fesetexceptflag(&excepts, FE_DIVBYZERO| FE_UNDERFLOW|FE_OVERFLOW) == 0;
+#elif HAVE_FEENABLEEXCEPT
+      /* I shall ignore de-normalization and precision errors */
+  feenableexcept(FE_DIVBYZERO| FE_INVALID|FE_OVERFLOW);
+#elif _WIN32
+  // Enable zero-divide, overflow and underflow exception
+  _controlfp_s(0, ~(_EM_ZERODIVIDE|_EM_UNDERFLOW|_EM_OVERFLOW), _MCW_EM); // Line B
+#elif defined(__hpux)
 # if HAVE_FESETTRAPENABLE
 /* From HP-UX 11.0 onwards: */
-    fesettrapenable(FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW|FE_UNDERFLOW);
+      fesettrapenable(FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW|FE_UNDERFLOW);
 # else
 /*
   Up until HP-UX 10.20:
@@ -2721,53 +2586,63 @@ set_fpu_exceptions(int flag)
   FP_X_IMP   imprecise (inexact result)
   FP_X_CLEAR simply zero to clear all flags
 */
-    fpsetmask(FP_X_INV|FP_X_DZ|FP_X_OFL|FP_X_UFL);
+      fpsetmask(FP_X_INV|FP_X_DZ|FP_X_OFL|FP_X_UFL);
 # endif
 #endif /* __hpux */
 #if HAVE_FPU_CONTROL_H && i386 && defined(__GNUC__)
-    /* I shall ignore denormalization and precision errors */
-    int v = _FPU_IEEE & ~(_FPU_MASK_IM|_FPU_MASK_ZM|_FPU_MASK_OM|_FPU_MASK_UM);
-    _FPU_SETCW(v);
+      /* I shall ignore denormalization and precision errors */
+      int v = _FPU_IEEE & ~(_FPU_MASK_IM|_FPU_MASK_ZM|_FPU_MASK_OM|_FPU_MASK_UM);
+      _FPU_SETCW(v);
 #endif
 #if HAVE_FETESTEXCEPT
-    feclearexcept(FE_ALL_EXCEPT);
+      feclearexcept(FE_ALL_EXCEPT);
 #endif
-#ifndef _WIN32
-    my_signal (SIGFPE, HandleMatherr);
+#ifdef HAVE_SIGFPE
+      my_signal (SIGFPE, HandleMatherr);
 #endif
   } else {
     /* do IEEE arithmetic in the way the big boys do */
-#if defined(__hpux)
+#if HAVE_FESETEXCEPTFLAG
+      fexcept_t excepts;
+      return fesetexceptflag(&excepts, 0) == 0;
+#elif HAVE_FEENABLEEXCEPT
+      /* I shall ignore de-normalization and precision errors */
+      feenableexcept(0);
+#elif _WIN32
+  // Enable zero-divide, overflow and underflow exception
+  _controlfp_s(0, (_EM_ZERODIVIDE|_EM_UNDERFLOW|_EM_OVERFLOW), _MCW_EM); // Line B
+#elif defined(__hpux)
 # if HAVE_FESETTRAPENABLE
-    fesettrapenable(FE_ALL_EXCEPT);
+      fesettrapenable(FE_ALL_EXCEPT);
 # else
-    fpsetmask(FP_X_CLEAR);
+      fpsetmask(FP_X_CLEAR);
 # endif
 #endif /* __hpux */
 #if HAVE_FPU_CONTROL_H && i386 && defined(__GNUC__)
-    /* this will probably not work in older releases of Linux */
-    int v = _FPU_IEEE;
-   _FPU_SETCW(v);
+      /* this will probably not work in older releases of Linux */
+      int v = _FPU_IEEE;
+      _FPU_SETCW(v);
 #endif    
-#ifndef _WIN32
-    my_signal (SIGFPE, SIG_IGN);
+#ifdef HAVE_SIGFPE
+      my_signal (SIGFPE, SIG_IGN);
 #endif
   }
+  return true;
 }
 
-void
-Yap_set_fpu_exceptions(int flag)
+bool
+Yap_set_fpu_exceptions(bool flag)
 {
-  set_fpu_exceptions(flag);
+  return set_fpu_exceptions(flag);
 }
+
 static Int
 p_set_fpu_exceptions( USES_REGS1 ) {
-  if (yap_flags[LANGUAGE_MODE_FLAG] == 1) {
-    set_fpu_exceptions(FALSE); /* can't make it work right */
+  if (Deref(ARG1) == MkAtomTerm(AtomTrue)) {
+    return set_fpu_exceptions(true);
   } else {
-    set_fpu_exceptions(FALSE);
+    return set_fpu_exceptions( false );
   }
-  return(TRUE);
 }
 
 static Int
@@ -2781,6 +2656,55 @@ p_yap_home( USES_REGS1 ) {
   Term out = MkAtomTerm(Yap_LookupAtom(YAP_ROOTDIR));
   return(Yap_unify(out,ARG1));
 }
+
+static Int
+p_yap_paths( USES_REGS1 ) {
+  Term out1, out2, out3;
+  if (strlen(DESTDIR)) {
+    out1 = MkAtomTerm(Yap_LookupAtom(DESTDIR "/" YAP_LIBDIR));
+    out2 = MkAtomTerm(Yap_LookupAtom(DESTDIR "/" YAP_SHAREDIR));
+    out3 = MkAtomTerm(Yap_LookupAtom(DESTDIR "/" YAP_BINDIR));
+  } else {
+    out1 = MkAtomTerm(Yap_LookupAtom(YAP_LIBDIR));
+#if __ANDROID__
+    out2 = MkAtomTerm(Yap_LookupAtom("/assets/share"));
+#else
+    out2 = MkAtomTerm(Yap_LookupAtom(YAP_SHAREDIR));
+#endif
+    out3 = MkAtomTerm(Yap_LookupAtom(YAP_BINDIR));
+  }
+  return(Yap_unify(out1,ARG1) &&
+	 Yap_unify(out2,ARG2) &&
+	 Yap_unify(out3,ARG3));
+}
+
+static Int
+p_log_event( USES_REGS1 ) {
+  Term in = Deref(ARG1);
+  Atom at;
+
+  if (IsVarTerm(in))
+    return FALSE;
+  if (!IsAtomTerm(in))
+    return FALSE;
+  at = AtomOfTerm( in );
+#if DEBUG
+  if (IsWideAtom(at) )
+    fprintf(stderr, "LOG %S\n", RepAtom(at)->WStrOfAE);
+  else if (IsBlob(at))
+    return FALSE;
+  else
+    fprintf(stderr, "LOG %s\n", RepAtom(at)->StrOfAE);
+#endif
+  if (IsWideAtom(at) || IsBlob(at))
+    return FALSE;
+#if __ANDROID__
+  __android_log_print(ANDROID_LOG_INFO, "YAP", " %s ",RepAtom(at)->StrOfAE);
+#endif
+  return TRUE;
+
+}
+
 
 static Int
 p_env_separator( USES_REGS1 ) {
@@ -2861,26 +2785,20 @@ p_win32( USES_REGS1 )
 static Int
 p_enable_interrupts( USES_REGS1 )
 {
-  LOCK(LOCAL_SignalLock);
   LOCAL_InterruptsDisabled--;
-  if (LOCAL_ActiveSignals && !LOCAL_InterruptsDisabled) {
+  if (LOCAL_Signals && !LOCAL_InterruptsDisabled) {
     CreepFlag = Unsigned(LCL0);
-    if ( LOCAL_ActiveSignals != YAP_CREEP_SIGNAL )
+    if ( !Yap_only_has_signal( YAP_CREEP_SIGNAL ) )
       EventFlag = Unsigned( LCL0 );
   }
-  UNLOCK(LOCAL_SignalLock);
   return TRUE;
 }
 
 static Int
 p_disable_interrupts( USES_REGS1 )
 {
-  LOCK(LOCAL_SignalLock);
   LOCAL_InterruptsDisabled++;
-  if (LOCAL_ActiveSignals) {
-    CalculateStackGap( PASS_REGS1 );
-  }
-  UNLOCK(LOCAL_SignalLock);
+  CalculateStackGap( PASS_REGS1 );
   return TRUE;
 }
 
@@ -3107,16 +3025,24 @@ Yap_InitSysPreds(void)
   /* can only do after heap is initialised */
   InitLastWtime();
   Yap_InitCPred ("srandom", 1, p_srandom, SafePredFlag);
+#if HAVE_RANDOM
+  Yap_InitCPred ("init_random_state", 3, p_init_random_state, SafePredFlag);
+  Yap_InitCPred ("set_random_state", 2, p_set_random_state, SafePredFlag);
+  Yap_InitCPred ("release_random_state", 1, p_release_random_state, SafePredFlag);
+#endif
+  Yap_InitCPred ("log_event", 1, p_log_event, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred ("library_directories", 2, p_libraries_path, SafePredFlag);
   Yap_InitCPred ("sh", 0, p_sh, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred ("$shell", 1, p_shell, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred ("system", 1, p_system, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred ("$shell", 1, p_shell, SafePredFlag|SyncPredFlag|UserCPredFlag);
+  Yap_InitCPred ("system", 1, p_system, SafePredFlag|SyncPredFlag|UserCPredFlag);
   Yap_InitCPred ("rename", 2, p_mv, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred ("$yap_home", 1, p_yap_home, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred ("$yap_home", 1, p_yap_home, SafePredFlag);
+  Yap_InitCPred ("$yap_paths", 3, p_yap_paths, SafePredFlag);
   Yap_InitCPred ("$dir_separator", 1, p_dir_sp, SafePredFlag);
   Yap_InitCPred ("$alarm", 4, p_alarm, SafePredFlag|SyncPredFlag);
   Yap_InitCPred ("$getenv", 2, p_getenv, SafePredFlag);
   Yap_InitCPred ("$putenv", 2, p_putenv, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred ("$set_fpu_exceptions", 0, p_set_fpu_exceptions, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred ("$set_fpu_exceptions", 	1, p_set_fpu_exceptions, SafePredFlag|SyncPredFlag);
   Yap_InitCPred ("$host_type", 1, p_host_type, SafePredFlag|SyncPredFlag);
   Yap_InitCPred ("$env_separator", 1, p_env_separator, SafePredFlag);
   Yap_InitCPred ("$unix", 0, p_unix, SafePredFlag);
@@ -3124,6 +3050,7 @@ Yap_InitSysPreds(void)
   Yap_InitCPred ("$ld_path", 1, p_ld_path, SafePredFlag);
   Yap_InitCPred ("$address_bits", 1, p_address_bits, SafePredFlag);
   Yap_InitCPred ("$expand_file_name", 2, p_expand_file_name, SyncPredFlag);
+  Yap_InitCPred ("$fpe_error", 0, p_fpe_error, 0);
 #ifdef _WIN32
   Yap_InitCPred ("win_registry_get_value", 3, p_win_registry_get_value,0);
 #endif

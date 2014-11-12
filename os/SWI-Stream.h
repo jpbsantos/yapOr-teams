@@ -46,11 +46,12 @@
 #include <wchar.h>
 #include <stddef.h>
 #ifdef __WINDOWS__
+#include <stdint.h>
 #ifndef INT64_T_DEFINED
 #define INT64_T_DEFINED 1
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
-#if (_MSC_VER < 1300) && !defined(__MINGW32__)
+#if (_MSC_VER < 1300)
 typedef long intptr_t;
 typedef unsigned long uintptr_t;
 typedef intptr_t ssize_t;		/* signed version of size_t */
@@ -67,7 +68,7 @@ extern "C" {
 
 #ifndef PL_HAVE_TERM_T
 #define PL_HAVE_TERM_T
-typedef	uintptr_t    term_t;
+typedef	intptr_t    term_t;
 #endif
 		 /*******************************
 		 *	    CONSTANTS		*
@@ -112,8 +113,8 @@ typedef struct io_functions
 typedef struct io_position
 { int64_t		byteno;		/* byte-position in file */
   int64_t		charno;		/* character position in file */
-  int			lineno;		/* lineno in file */
-  int			linepos;	/* position in line */
+  long int		lineno;		/* lineno in file */
+  long int		linepos;	        /* position in line */
   intptr_t		reserved[2];	/* future extensions */
 } IOPOS;
 
@@ -230,9 +231,13 @@ PL_EXPORT_DATA(IOSTREAM)    S__iob[3];		/* Libs standard streams */
 #define Sgetchar()	Sgetc(Sinput)
 #define Sputchar(c)	Sputc((c), Soutput)
 
-#define S__checkpasteeof(s,c) \
-	if ( (c)==-1 && (s)->flags & (SIO_FEOF|SIO_FERR) ) \
-	  ((s)->flags |= SIO_FEOF2)
+static inline void
+S__checkpasteeof(IOSTREAM *s, int c)
+{
+  if ( (c)==-1 && ((s)->flags & (SIO_FEOF|SIO_FERR)) )
+    ((s)->flags |= SIO_FEOF2);
+}
+
 #define S__updatefilepos_getc(s, c) \
 	((s)->position ? S__fupdatefilepos_getc((s), (c)) \
 		       : S__fcheckpasteeof((s), (c)))
@@ -369,6 +374,9 @@ PL_EXPORT(int)		StryLock(IOSTREAM *s);
 PL_EXPORT(int)		Sunlock(IOSTREAM *s);
 PL_EXPORT(IOSTREAM *)	Snew(void *handle, int flags, IOFUNCTIONS *functions);
 PL_EXPORT(IOSTREAM *)	Sopen_file(const char *path, const char *how);
+#ifdef ANDROID_ASSET_MANAGER_H
+PL_EXPORT(IOSTREAM *)	Sopen_asset(char *bufp, const char *how, AAssetManager* mgr);
+#endif
 PL_EXPORT(IOSTREAM *)	Sfdopen(int fd, const char *type);
 PL_EXPORT(int)	   	Sfileno(IOSTREAM *s);
 PL_EXPORT(IOSTREAM *)	Sopen_pipe(const char *command, const char *type);

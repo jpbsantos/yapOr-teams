@@ -4,6 +4,7 @@
 	   source_exports/2
 	  ]).
 
+:- use_system_module( '$_errors', ['$do_error'/2]).
 
 prolog:'$expects_dialect'(yap) :- !,
 	eraseall('$dialect'),
@@ -64,8 +65,8 @@ source_exports(Source, Export) :-
 	open_source(Source, In),
 	catch(call_cleanup(exports(In, Exports), close(In)), _, fail),
 	(   ground(Export)
-	->  memberchk(Export, Exports)
-	;   member(Export, Exports)
+	->  lists:memberchk(Export, Exports)
+	;   lists:member(Export, Exports)
 	).
 
 %%	open_source(+Source, -In:stream) is semidet.

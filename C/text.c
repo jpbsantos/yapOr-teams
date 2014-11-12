@@ -24,6 +24,15 @@
 #include "YapText.h"
 
 #include <string.h>
+#include <wchar.h>
+
+#ifndef HAVE_WCSNLEN
+inline static size_t
+min_size(size_t i, size_t j) {
+  return ( i < j ?  i :  j );
+}
+#define wcsnlen(S, N) min_size(N, wcslen(S))
+#endif
 
 static inline unsigned char *get_char(unsigned char *p, int *c) { *c = *p; return p+1; }
 
@@ -1267,7 +1276,7 @@ concat( int n, seq_tv_t *out, void *sv[], encoding_t encv[], size_t lengv[] USES
 	while ( (chr = *ptr++) != '\0' ) *buf++ = chr;
       }
       *buf++ = '\0';
-      at = out->val.a = Yap_LookupAtom((char *)HR);
+      at = out->val.a = Yap_LookupAtom((const char *)HR);
       return at;
     }
   }
@@ -1350,7 +1359,7 @@ void *
 Yap_Concat_Text( int n,  seq_tv_t inp[], seq_tv_t *out USES_REGS)
 {
   encoding_t * encv;
-   void **bufv;
+  void **bufv;
   int minimal = FALSE;
   void *buf;
   size_t leng, *lengv;
@@ -1360,8 +1369,6 @@ Yap_Concat_Text( int n,  seq_tv_t inp[], seq_tv_t *out USES_REGS)
   HEAP_TERM_ERROR(bufv, void *);
   encv = (encoding_t *)malloc(n*sizeof(encoding_t));
   HEAP_ERROR(encv, encoding_t);
-  lengv = (size_t *)malloc(n*sizeof(size_t));
-  HEAP_ERROR(lengv, size_t);
   buf = NULL;
   for (i = 0 ; i < n ; i++) {
     void *nbuf = read_Text( buf, inp+i, encv+i, &minimal, &leng PASS_REGS );
@@ -1373,6 +1380,8 @@ Yap_Concat_Text( int n,  seq_tv_t inp[], seq_tv_t *out USES_REGS)
       buf = compute_end( nbuf, encv[i] );
     }
   }
+  lengv = (size_t *)malloc(n*sizeof(size_t));
+  HEAP_ERROR(lengv, size_t);
   buf = concat(n, out, bufv, encv, lengv PASS_REGS);
   return buf;
 }

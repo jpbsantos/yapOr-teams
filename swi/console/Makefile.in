@@ -1,3 +1,7 @@
+################################################################
+# Makefile for the SWI-Prolog console window.
+################################################################
+
 #
 # default base directory for YAP installation
 # (EROOT for architecture-dependent files)
@@ -12,8 +16,10 @@ EROOTDIR = @exec_prefix@
 LIBDIR=@libdir@/Yap
 #
 #
-CC=@CC@ -municode -DUNICODE -D_UNICODE
+CC=@CC@
 CPPFLAGS=@CPPFLAGS@ 
+DEFS=-D_export="extern __declspec(dllexport)" -DUNICODE -D_UNICODE \
+	-D__WINDOWS__ -D__YAP_PROLOG__
 CFLAGS= @CFLAGS@ $(DEFS) $(CPPFLAGS)  -I$(srcdir) -DRLC_VENDOR="\"YAP\""
 #
 #
@@ -24,6 +30,7 @@ INSTALL_DATA=@INSTALL_DATA@
 INSTALL_PROGRAM=@INSTALL_PROGRAM@
 RANLIB=@RANLIB@
 AR=@AR@
+VPATH=@srcdir@
 srcdir=@srcdir@
 
 SOURCES= \
@@ -42,7 +49,7 @@ LIBS=-lgdi32 -lcomdlg32
 all: ../../plterm.dll
 
 ../../plterm.dll:  libplterm.a
-	$(CC) $(CFLAGS) -shared -o ../../plterm.dll \
+	$(CC) -municode $(CFLAGS) -shared -o ../../plterm.dll \
 	-Wl,--export-all-symbols \
 	-Wl,--enable-auto-import \
 	-Wl,--whole-archive libplterm.a \
@@ -55,21 +62,14 @@ libplterm.a: $(OBJECTS) $(SOURCES) $(HEADERS)
 
 install:
 
-clean:
+ clean:
 	rm -f *.o *~ *.dll
 
-complete.o: $(srcdir)/complete.c
-	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $(srcdir)/complete.c -o complete.o
+.o: .c
+	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $@ -o $<
 
-console.o: $(srcdir)/console.c
-	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $(srcdir)/console.c -o console.o
 
-history.o: $(srcdir)/history.c
-	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $(srcdir)/history.c -o history.o
+console.o: $(srcdir)/console_i.h $(srcdir)/console.h
 
-menu.o: $(srcdir)/menu.c
-	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $(srcdir)/menu.c -o menu.o
-
-edit.o: $(srcdir)/edit.c
-	$(CC) -c $(CFLAGS) $(SHLIB_CFLAGS) $(srcdir)/edit.c -o edit.o
-
+distclean: clean
+	rm -f Makefile

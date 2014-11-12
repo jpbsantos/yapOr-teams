@@ -56,7 +56,7 @@ typedef struct export_pred_entry_hash_entry_struct {
   union {
     Functor f;
     Atom a;
-  } u;
+  } u_af;
   Atom module;
   UInt arity;
 } export_pred_entry_hash_entry_t;
@@ -102,11 +102,9 @@ typedef enum {
 } qlf_tag_t;
 
 #define STATIC_PRED_FLAGS (SourcePredFlag|DynamicPredFlag|LogUpdatePredFlag|CompiledPredFlag|MultiFileFlag|TabledPredFlag|MegaClausePredFlag|CountPredFlag|ProfiledPredFlag|ThreadLocalPredFlag|AtomDBPredFlag|ModuleTransparentPredFlag|NumberDBPredFlag|MetaPredFlag|SyncPredFlag|BackCPredFlag)
-#define EXTRA_PRED_FLAGS (QuasiQuotationPredFlag|NoTracePredFlag|NoDebugPredFlag)
+#define EXTRA_PRED_FLAGS (QuasiQuotationPredFlag|NoTracePredFlag|NoSpyPredFlag)
 
 #define SYSTEM_PRED_FLAGS (BackCPredFlag|UserCPredFlag|CArgsPredFlag|AsmPredFlag|CPredFlag|BinaryPredFlag)
-
-#define NEXTOP(V,TYPE)    ((yamop *)(&((V)->u.TYPE.next)))
 
 #define CHECK(F) { size_t r = (F); if (!r) return r; }
 #define RCHECK(F)  if(!(F)) { QLYR_ERROR(MISMATCH); return; }

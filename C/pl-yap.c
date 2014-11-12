@@ -4,27 +4,32 @@
 #define PL_KERNEL 1
 
 #include <stdio.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_SYS_TIMES_H
+#include <sys/times.h>
+#endif
 #include "Yap.h"
 #include "Yatom.h"
 #include "pl-incl.h"
 #include "YapText.h"
+#include "yapio.h"
 #if HAVE_MATH_H
 #include <math.h>
 #endif
+#if __WINDOWS__
+#include <process.h>
 
-#define	Quote_illegal_f		1
-#define	Ignore_ops_f		2
-#define	Handle_vars_f		4
-#define	Use_portray_f		8
-#define	To_heap_f	       16
-#define	Unfold_cyclics_f       32
+#define getpid _getpid
+#endif
 
 #ifdef HAVE_LIMITS_H
 #include <limits.h>
 #endif
 
-#define LOCK()   PL_LOCK(L_PLFLAG)
-#define UNLOCK() PL_UNLOCK(L_PLFLAG)
+//#define LOCK()   PL_LOCK(L_PLFLAG)
+//#define UNLOCK() PL_UNLOCK(L_PLFLAG)
 
 int fileerrors;
 
@@ -158,14 +163,14 @@ callProlog(module_t module, term_t goal, int flags, term_t *ex )
   }
 }
 
-extern YAP_Term Yap_InnerEval(YAP_Term t);
+extern YAP_Term Yap_InnerEval__(YAP_Term t USES_REGS);
 
 inline static YAP_Term
-Yap_Eval(YAP_Term t)
+Yap_Eval(YAP_Term t USES_REGS)
 {
-  if (t == 0L || ( !YAP_IsVarTerm(t) && (YAP_IsIntTerm(t) || YAP_IsFloatTerm(t)) ))
+  if (t == 0L || ( !YAP_IsVarTerm(t) && (YAP_IsIntTerm(t) || YAP_IsFloatTerm(t)) ) )
     return t;
-  return Yap_InnerEval(t);
+  return Yap_InnerEval__(t PASS_REGS);
 }
 
 IOENC
@@ -202,7 +207,8 @@ PL_qualify(term_t raw, term_t qualified)
 int
 valueExpression(term_t t, Number r ARG_LD)
 {
-  YAP_Term t0 = Yap_Eval(YAP_GetFromSlot(t));
+  REGS_FROM_LD
+  YAP_Term t0 = Yap_Eval(Yap_GetFromSlot(t PASS_REGS) PASS_REGS);
   if (YAP_IsIntTerm(t0)) {
     r->type = V_INTEGER;
     r->value.i = YAP_IntOfTerm(t0);
@@ -563,14 +569,7 @@ PL_unify_chars(term_t t, int flags, size_t len, const char *s)
 
 X_API int PL_handle_signals(void)
 {
-  GET_LD
-  if ( !LD || LD->critical || !LD->signal.pending )
-    return 0;
-  if (LD->signal.pending == 2) {
-    Yap_Error(PURE_ABORT, TermNil, "abort from console");
-  }
-  //  fprintf(stderr,"PL_handle_signals not implemented\n");
-  return 1;
+  return Yap_HandleInterrupts( );
 }
 
 void
@@ -649,7 +648,7 @@ numberVars(term_t t, nv_options *opts, int n ARG_LD) {
 		 *	     PROMOTION		*
 		 *******************************/
 
-static int
+int
 check_float(double f)
 {
 #ifdef HAVE_FPCLASSIFY
@@ -795,7 +794,6 @@ PL_unify_wchars_diff(term_t t, term_t tail, int flags,
 
   if ( len == (size_t)-1 )
     len = wcslen(s);
-
   text.text.w    = (pl_wchar_t *)s;
   text.encoding  = ENC_WCHAR;
   text.storage   = PL_CHARS_HEAP;
@@ -855,8 +853,6 @@ int
 PL_get_chars(term_t t, char **s, unsigned flags)
 { return PL_get_nchars(t, NULL, s, flags);
 }
-
-char   *Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int flags);
 
 char *
 Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int flags)
@@ -918,6 +914,39 @@ Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int 
     }
   }
   LOCAL_CurSlot = CurSlot;
+  return NULL;
+}
+
+char *
+Yap_HandleToString(term_t l, size_t sz, size_t *length, int *encoding, int flags)
+{
+
+  char *r, buf[4096];
+
+	int64_t size;
+	IOSTREAM *fd;
+
+	  r = buf;
+	fd = Sopenmem(&r, &sz, "w");
+	fd->encoding = ENC_UTF8;
+	if ( PL_write_term(fd, l, 1200, flags) &&
+	     Sputcode(EOS, fd) >= 0 &&
+	     Sflush(fd) >= 0 )
+	  {
+	    size = Stell64(fd);
+		*length = size-1;
+		char *bf = malloc(*length+1);
+	      if (!bf)
+		return NULL;
+	      strncpy(bf,buf,*length+1);
+	      Sclose(fd);
+	      r = bf;
+	    return r;
+	  }
+    /* failed */
+    if ( r != buf ) {
+      Sfree(r);
+    }
   return NULL;
 }
 
@@ -1146,8 +1175,15 @@ X_API int PL_unify_int64__LD(term_t t, int64_t n ARG_LD)
 #else
   if ((long)n == n)
     return PL_unify_integer(t, n);
-  fprintf(stderr,"Error in PL_unify_int64: please install GMP\n");
-  return FALSE;
+	// use a double, but will mess up writing.
+else {
+	union {
+		int64_t i;
+		double d;
+	} udi_;
+	udi_.i = n;
+	return PL_unify_float(t, udi_.d);
+}
 #endif
 
 }
@@ -1173,30 +1209,33 @@ PL_w32thread_raise(DWORD id, int sig)
     handling in the Win32 platform.
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-static int thread_highest_id = 1;
+static int thread_highest_id = 0;
 
 X_API int
 PL_w32thread_raise(DWORD id, int sig)
 { int i;
+  CACHE_REGS
 
   if ( sig < 0 || sig > MAXSIGNAL )
     return FALSE;			/* illegal signal */
 
-  LOCK();
-  for(i = 1; i <= thread_highest_id; i++)
-  { PL_thread_info_t *info = GD->thread.threads[i];
-
-    if ( info && info->w32id == id && info->thread_data )
-      { Yap_signal(sig); //raiseSignal(info->thread_data, sig);
-      if ( info->w32id )
-	PostThreadMessage(info->w32id, WM_SIGNALLED, 0, 0L);
-      UNLOCK();
-      DEBUG(1, Sdprintf("Signalled %d to thread %d\n", sig, i));
-      return TRUE;
+  PL_LOCK(L_PLFLAG);	
+  for(i = 0; i <= thread_highest_id; i++)
+    { PL_thread_info_t *info = GD->thread.threads[i];
+      
+      if ( info && info->w32id == id && info->thread_data )
+	{ 
+	  Sfprintf(GLOBAL_stderr, "post %d %d\n\n\n",i, sig);
+	  Yap_external_signal(i, sig); //raiseSignal(info->thread_data, sig);
+	  if ( info->w32id )
+	    PostThreadMessage(info->w32id, WM_SIGNALLED, 0, 0L);
+	  PL_UNLOCK(L_PLFLAG);
+	  DEBUG(1, Sdprintf("Signalled %d to thread %d\n", sig, i));
+	  return TRUE;
+	}
     }
-  }
-  UNLOCK();
-
+  PL_UNLOCK(L_PLFLAG);
+  
   return FALSE;				/* can't find thread */
 }
 
@@ -1210,19 +1249,6 @@ PL_w32thread_raise(DWORD id, int sig)
 #endif
 #endif /*__WINDOWS__*/
 
-
-X_API int
-PL_raise(int sig)
-{
-  if (sig < SIG_PROLOG_OFFSET) {
-    Yap_signal(YAP_INT_SIGNAL);
-    return 1;
-  } else if (sig == SIG_PLABORT) {
-    YAP_signal(0x40); /* YAP_INT_SIGNAL */
-    return 1;
-  }
-  return 0;
-}
 
 extern size_t PL_utf8_strlen(const char *s, size_t len);
 
@@ -1372,19 +1398,6 @@ sysError(const char *fm, ...)
   PL_fail;
 }
 
-int
-raiseSignal(PL_local_data_t *ld, int sig)
-{
-#if THREADS
- if (sig == SIG_THREAD_SIGNAL) {
-     Yap_signal(YAP_ITI_SIGNAL);
-     return TRUE;    
-  }
-#endif
-  fprintf(stderr, "Unsupported signal %d\n", sig);
-  return FALSE;
-}
-
 Int
 Yap_source_line_no( void )
 { GET_LD
@@ -1514,7 +1527,7 @@ PL_thread_info_t *
 SWI_thread_info(int tid, PL_thread_info_t *info)
 {
   if (info)
-    REMOTE_PL_local_data_p(tid)->thread.info = info;
+    GD->thread.threads[tid] = REMOTE_PL_local_data_p(tid)->thread.info = info;
   return REMOTE_PL_local_data_p(tid)->thread.info;
 }
 

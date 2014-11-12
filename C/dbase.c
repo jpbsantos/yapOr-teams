@@ -18,6 +18,85 @@
 static char     SccsId[] = "%W% %G%";
 #endif
 
+
+/** @defgroup Internal_Database Internal Data Base
+@ingroup YAPBuiltins
+@{
+
+Some programs need global information for, e.g. counting or collecting 
+data obtained by backtracking. As a rule, to keep this information, the
+internal data base should be used instead of asserting and retracting
+clauses (as most novice programmers  do), .
+In YAP (as in some other Prolog systems) the internal data base (i.d.b. 
+for short) is faster, needs less space and provides a better insulation of 
+program and data than using asserted/retracted clauses.
+The i.d.b. is implemented as a set of terms, accessed by keys that 
+unlikely what happens in (non-Prolog) data bases are not part of the 
+term. Under each key a list of terms is kept. References are provided so that 
+terms can be identified: each term in the i.d.b. has a unique reference 
+(references are also available for clauses of dynamic predicates).
+
+There is a strong analogy between the i.d.b. and the way dynamic 
+predicates are stored. In fact, the main i.d.b. predicates might be 
+implemented using dynamic predicates:
+
+~~~~~
+recorda(X,T,R) :- asserta(idb(X,T),R).
+recordz(X,T,R) :- assertz(idb(X,T),R).
+recorded(X,T,R) :- clause(idb(X,T),R).
+~~~~~
+We can take advantage of this, the other way around, as it is quite 
+easy to write a simple Prolog interpreter, using the i.d.b.:
+
+~~~~~
+asserta(G) :- recorda(interpreter,G,_).
+assertz(G) :- recordz(interpreter,G,_).
+retract(G) :- recorded(interpreter,G,R), !, erase(R).
+call(V) :- var(V), !, fail.
+call((H :- B)) :- !, recorded(interpreter,(H :- B),_), call(B).
+call(G) :- recorded(interpreter,G,_).
+~~~~~
+In YAP, much attention has been given to the implementation of the 
+i.d.b., especially to the problem of accelerating the access to terms kept in 
+a large list under the same key. Besides using the key, YAP uses an internal 
+lookup function, transparent to the user, to find only the terms that might 
+unify. For instance, in a data base containing the terms
+
+~~~~~
+b
+b(a)
+c(d)
+e(g)
+b(X)
+e(h)
+~~~~~
+
+stored under the key k/1, when executing the query 
+
+~~~~~
+:- recorded(k(_),c(_),R).
+~~~~~
+
+`recorded` would proceed directly to the third term, spending almost the 
+time as if `a(X)` or `b(X)` was being searched.
+The lookup function uses the functor of the term, and its first three
+arguments (when they exist). So, `recorded(k(_),e(h),_)` would go
+directly to the last term, while `recorded(k(_),e(_),_)` would find
+first the fourth term, and then, after backtracking, the last one.
+
+This mechanism may be useful to implement a sort of hierarchy, where 
+the functors of the terms (and eventually the first arguments) work as 
+secondary keys.
+
+In the YAP's i.d.b. an optimized representation is used for 
+terms without free variables. This results in a faster retrieval of terms 
+and better space usage. Whenever possible, avoid variables in terms in terms stored in the  i.d.b.
+
+
+ 
+*/
+
+
 #include "Yap.h"
 #include "clause.h"
 #include "yapio.h"
@@ -101,21 +180,6 @@ typedef struct {
   CELL           *SFather;      /* and his father's position */
 }               SFKeep;
 #endif
-
-typedef struct queue_entry {
-  struct queue_entry *next;
-  DBTerm *DBT;
-} QueueEntry;
-
-typedef struct idb_queue
-{
-  Functor id;		/* identify this as being pointed to by a DBRef */
-  SMALLUNSGN    Flags;  /* always required */
-#if PARALLEL_YAP
-  rwlock_t    QRWLock;         /* a simple lock to protect this entry */
-#endif
-  QueueEntry *FirstInQueue, *LastInQueue;
-}  db_queue;
 
 #define HashFieldMask		((CELL)0xffL)
 #define DualHashFieldMask	((CELL)0xffffL)
@@ -1839,7 +1903,7 @@ new_lu_db_entry(Term t, PredEntry *pe)
 
 #if MULTIPLE_STACKS
   /* we cannot allow sharing between threads (for now) */ 
-  if (!(pe->PredFlags & ThreadLocalPredFlag))
+  if (!pe || !(pe->PredFlags & ThreadLocalPredFlag))
     d_flag |= InQueue;
 #endif
   LOCAL_s_dbg = &dbg;
@@ -2038,6 +2102,14 @@ p_rcdap( USES_REGS1 )
 }
 
 /* recorda_at(+DBRef,+Term,-Ref) */
+/** @pred  recorda_at(+ _R0_, _T_,- _R_) 
+
+
+Makes term  _T_ the record preceding record with reference
+ _R0_, and unifies  _R_ with its reference.
+
+ 
+*/
 static Int 
 p_rcda_at( USES_REGS1 )
 {
@@ -2080,6 +2152,12 @@ p_rcda_at( USES_REGS1 )
 }
 
 /* recordz(+Functor,+Term,-Ref) */
+/** @pred  recordz(+ _K_, _T_,- _R_) 
+
+Makes term  _T_ the last record under key  _K_ and unifies  _R_
+with its reference.
+ 
+*/
 static Int 
 p_rcdz( USES_REGS1 )
 {
@@ -2176,6 +2254,14 @@ p_rcdzp( USES_REGS1 )
 }
 
 /* recordz_at(+Functor,+Term,-Ref) */
+/** @pred  recordz_at(+ _R0_, _T_,- _R_) 
+
+
+Makes term  _T_ the record following record with reference
+ _R0_, and unifies  _R_ with its reference.
+
+ 
+*/
 static Int 
 p_rcdz_at( USES_REGS1 )
 {
@@ -2515,7 +2601,7 @@ GetDBTerm(DBTerm *DBSP, int src USES_REGS)
     if (HR+NOf > ASP-EventFlag/sizeof(CELL)) {
       if (LOCAL_PrologMode & InErrorMode) {
 	if (HR+NOf > ASP)
-	  fprintf(GLOBAL_stderr, "\n\n [ FATAL ERROR: No Stack for Error Handling ]\n");
+	  fprintf(stderr, "\n\n [ FATAL ERROR: No Stack for Error Handling ]\n");
 	  Yap_exit( 1);
       } else {
 	LOCAL_Error_TYPE = OUT_OF_STACK_ERROR;
@@ -2718,7 +2804,7 @@ new_lu_entry(Term t)
   if (IsApplTerm(t)) {
     Functor f = FunctorOfTerm(t);
 
-    WRITE_LOCK(f->FRWLock);
+    FUNC_WRITE_LOCK(f);
     p0 = Yap_NewPredPropByFunctor(f,IDB_MODULE);
   } else if (IsAtomTerm(t)) {
     Atom at = AtomOfTerm(t);
@@ -2726,7 +2812,7 @@ new_lu_entry(Term t)
     WRITE_LOCK(RepAtom(at)->ARWLock);
     p0 = Yap_NewPredPropByAtom(at,IDB_MODULE);
   } else {
-    WRITE_LOCK(FunctorList->FRWLock);
+    FUNC_WRITE_LOCK(FunctorList);
     p0 = Yap_NewPredPropByFunctor(FunctorList,IDB_MODULE);
   }
   pe = RepPredProp(p0);
@@ -3614,14 +3700,14 @@ index_sz(LogUpdIndex *x)
       endop = Yap_opcode(_profiled_trust_logical);
     else
       endop = Yap_opcode(_trust_logical);
-    start = start->u.Illss.l1;
-    if (start->u.Illss.s) do {
+    start = start->y_u.Illss.l1;
+    if (start->y_u.Illss.s) do {
       sz += (UInt)NEXTOP((yamop*)NULL,OtaLl);
       op1 = start->opc;
       count++;
-      if (start->u.OtaLl.d->ClFlags & ErasedMask)
+      if (start->y_u.OtaLl.d->ClFlags & ErasedMask)
 	dead++;
-      start = start->u.OtaLl.n;
+      start = start->y_u.OtaLl.n;
     } while (op1 != endop);
   }
   x = x->ChildIndex;
@@ -3656,9 +3742,9 @@ lu_statistics(PredEntry *pe USES_REGS)
     /* expand clause blocks */
     yamop *ep = ExpandClausesFirst;
     while (ep) {
-      if (ep->u.sssllp.p == pe)
-	isz += (UInt)NEXTOP((yamop *)NULL,sssllp)+ep->u.sssllp.s1*sizeof(yamop *);
-      ep = ep->u.sssllp.snext;
+      if (ep->y_u.sssllp.p == pe)
+	isz += (UInt)NEXTOP((yamop *)NULL,sssllp)+ep->y_u.sssllp.s1*sizeof(yamop *);
+      ep = ep->y_u.sssllp.snext;
     }
     isz += index_sz(ClauseCodeToLogUpdIndex(pe->cs.p_code.TrueCodeOfPred));
   }
@@ -3668,7 +3754,16 @@ lu_statistics(PredEntry *pe USES_REGS)
     Yap_unify(ARG4,MkIntegerTerm(isz));
 }
 
+/** @pred  key_statistics(+ _K_,- _Entries_,- _Size_,- _IndexSize_) 
 
+
+Returns several statistics for a key  _K_. Currently, it says how
+many entries we have for that key,  _Entries_, what is the
+total size spent on entries,  _Size_, and what is the amount of
+space spent in indices.
+
+ 
+*/
 static Int
 p_key_statistics( USES_REGS1 )
 {
@@ -3915,7 +4010,7 @@ find_next_clause(DBRef ref0 USES_REGS)
 static Int
 p_jump_to_next_dynamic_clause( USES_REGS1 )
 {
-  DBRef ref = (DBRef)(((yamop *)((CODEADDR)P-(CELL)NEXTOP((yamop *)NULL,Osbpp)))->u.Osbpp.bmap);
+  DBRef ref = (DBRef)(((yamop *)((CODEADDR)P-(CELL)NEXTOP((yamop *)NULL,Osbpp)))->y_u.Osbpp.bmap);
   yamop *newp = find_next_clause(ref PASS_REGS);
   
   if (newp == NULL) {
@@ -4070,20 +4165,20 @@ MyEraseClause(DynamicClause *clau USES_REGS)
     I don't need to lock the clause at this point because 
     I am the last one using it anyway.
   */
-  ref = (DBRef) NEXTOP(clau->ClCode,Otapl)->u.Osbpp.bmap;
+  ref = (DBRef) NEXTOP(clau->ClCode,Otapl)->y_u.Osbpp.bmap;
   /* don't do nothing if the reference is still in use */
   if (DBREF_IN_USE(ref))
     return;
   if ( P == clau->ClCode ) {
     yamop *np = RTRYCODE;
     /* make it the next alternative */
-    np->u.Otapl.d = find_next_clause((DBRef)(NEXTOP(P,Otapl)->u.Osbpp.bmap) PASS_REGS);
-    if (np->u.Otapl.d == NULL)
+    np->y_u.Otapl.d = find_next_clause((DBRef)(NEXTOP(P,Otapl)->y_u.Osbpp.bmap) PASS_REGS);
+    if (np->y_u.Otapl.d == NULL)
       P = (yamop *)FAILCODE;
     else {
       /* with same arity as before */
-      np->u.Otapl.s = P->u.Otapl.s;
-      np->u.Otapl.p = P->u.Otapl.p;
+      np->y_u.Otapl.s = P->y_u.Otapl.s;
+      np->y_u.Otapl.p = P->y_u.Otapl.p;
       /* go ahead and try this code */
       P = np;
     }
@@ -4093,7 +4188,7 @@ MyEraseClause(DynamicClause *clau USES_REGS)
     Yap_FreeCodeSpace((char *)clau);
 #ifdef DEBUG
     if (ref->NOfRefsTo)
-      fprintf(GLOBAL_stderr, "Error: references to dynamic clause\n");
+      fprintf(stderr, "Error: references to dynamic clause\n");
 #endif
     RemoveDBEntry(ref PASS_REGS);
   }
@@ -4134,7 +4229,7 @@ PrepareToEraseLogUpdClause(LogUpdClause *clau, DBRef dbr)
   if (p->cs.p_code.FirstClause != cl) {
     /* we are not the first clause... */
     yamop *prev_code_p = (yamop *)(dbr->Prev->Code);
-    prev_code_p->u.Otapl.d = code_p->u.Otapl.d; 
+    prev_code_p->y_u.Otapl.d = code_p->y_u.Otapl.d; 
     /* are we the last? */
     if (p->cs.p_code.LastClause == cl)
       p->cs.p_code.LastClause = prev_code_p;
@@ -4143,7 +4238,7 @@ PrepareToEraseLogUpdClause(LogUpdClause *clau, DBRef dbr)
     if (p->cs.p_code.LastClause == p->cs.p_code.FirstClause) {
       p->cs.p_code.LastClause = p->cs.p_code.FirstClause = NULL;
     } else {
-      p->cs.p_code.FirstClause = code_p->u.Otapl.d;
+      p->cs.p_code.FirstClause = code_p->y_u.Otapl.d;
       p->cs.p_code.FirstClause->opc =
        Yap_opcode(_try_me);
     }
@@ -4158,7 +4253,7 @@ PrepareToEraseLogUpdClause(LogUpdClause *clau, DBRef dbr)
   if (p->cs.p_code.FirstClause == p->cs.p_code.LastClause) {
     if (p->cs.p_code.FirstClause != NULL) {
       code_p = p->cs.p_code.FirstClause;
-      code_p->u.Otapl.d = p->cs.p_code.FirstClause;
+      code_p->y_u.Otapl.d = p->cs.p_code.FirstClause;
       p->cs.p_code.TrueCodeOfPred = NEXTOP(code_p, Otapl);
       if (p->PredFlags & (SpiedPredFlag|CountPredFlag|ProfiledPredFlag)) {
 	p->OpcodeOfPred = Yap_opcode(_spy_pred);
@@ -4355,6 +4450,14 @@ p_decrease_reference_counter( USES_REGS1 )
 }
 
 /* erase(+Ref)	 */
+/** @pred  erase(+ _R_) 
+
+
+The term referred to by  _R_ is erased from the internal database. If
+reference  _R_ does not exist in the database, `erase` just fails.
+
+ 
+*/
 static Int 
 p_current_reference_counter( USES_REGS1 )
 {
@@ -4408,6 +4511,12 @@ p_erase_clause( USES_REGS1 )
 }
  
 /* eraseall(+Key)	 */
+/** @pred  eraseall(+ _K_) 
+
+All terms belonging to the key `K` are erased from the internal
+database. The predicate always succeeds.
+ 
+*/
 static Int 
 p_eraseall( USES_REGS1 )
 {
@@ -4470,6 +4579,14 @@ p_eraseall( USES_REGS1 )
 
 
 /* erased(+Ref) */
+/** @pred  erased(+ _R_) 
+
+
+Succeeds if the object whose database reference is  _R_ has been
+erased.
+
+ 
+*/
 static Int 
 p_erased( USES_REGS1 )
 {
@@ -4599,6 +4716,17 @@ mega_instance(yamop *code, PredEntry *ap USES_REGS)
 }
 
 /* instance(+Ref,?Term) */
+/** @pred  instance(+ _R_,- _T_) 
+
+
+If  _R_ refers to a clause or a recorded term,  _T_ is unified
+with its most general instance. If  _R_ refers to an unit clause
+ _C_, then  _T_ is unified with ` _C_ :- true`. When
+ _R_ is not a reference to an existing clause or to a recorded term,
+this goal fails.
+
+ 
+*/
 static Int 
 p_instance( USES_REGS1 )
 {
@@ -5041,6 +5169,123 @@ Yap_StoreTermInDBPlusExtraSpace(Term t, UInt extra_size, UInt *sz) {
   return o;
 }
 
+void
+Yap_init_tqueue( db_queue *dbq )
+{
+  dbq->id = FunctorDBRef;
+  dbq->Flags = DBClMask;
+  dbq->FirstInQueue = dbq->LastInQueue = NULL;
+  INIT_RWLOCK(dbq->QRWLock);
+}
+
+void
+Yap_destroy_tqueue( db_queue *dbq  USES_REGS)
+{
+  QueueEntry * cur_instance = dbq->FirstInQueue;
+  while (cur_instance) {
+      /* release space for cur_instance */
+      keepdbrefs(cur_instance->DBT PASS_REGS);
+      ErasePendingRefs(cur_instance->DBT PASS_REGS);
+      FreeDBSpace((char *) cur_instance->DBT);
+      FreeDBSpace((char *) cur_instance);
+  }
+  dbq->FirstInQueue =
+      dbq->LastInQueue = NULL;
+
+}
+
+bool
+Yap_enqueue_tqueue(db_queue *father_key, Term t USES_REGS)
+{
+  QueueEntry *x;
+  while ((x = (QueueEntry *)AllocDBSpace(sizeof(QueueEntry))) == NULL) {
+    if (!Yap_growheap(FALSE, sizeof(QueueEntry), NULL)) {
+      Yap_Error(OUT_OF_HEAP_ERROR, TermNil, "in findall");
+      return false;
+    }
+  }
+  /* Yap_LUClauseSpace += sizeof(QueueEntry); */
+  x->DBT = StoreTermInDB(Deref(t), 2 PASS_REGS);
+  if (x->DBT == NULL) {
+    return false;
+  }
+  x->next = NULL;
+  if (father_key->LastInQueue != NULL)
+    father_key->LastInQueue->next = x;
+  father_key->LastInQueue = x;
+  if (father_key->FirstInQueue == NULL) {
+    father_key->FirstInQueue = x;
+  }
+  return true;
+
+}
+
+bool
+Yap_dequeue_tqueue(db_queue *father_key, Term t, bool first, bool release USES_REGS)
+{
+  Term TDB;
+  CELL *oldH =  HR ;
+  tr_fr_ptr oldTR = TR;
+  QueueEntry * cur_instance = father_key->FirstInQueue, *prev = NULL;
+  while (cur_instance) {
+      HR = oldH;
+      HB = LCL0;
+      while ((TDB = GetDBTerm(cur_instance->DBT, false PASS_REGS)) == 0L) {
+	  if (LOCAL_Error_TYPE == OUT_OF_ATTVARS_ERROR) {
+	      LOCAL_Error_TYPE = YAP_NO_ERROR;
+	      if (!Yap_growglobal(NULL)) {
+		  Yap_Error(OUT_OF_ATTVARS_ERROR, TermNil, LOCAL_ErrorMessage);
+		  return false;
+	      }
+	  } else {
+	      LOCAL_Error_TYPE = YAP_NO_ERROR;
+	      if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, gc_P(P,CP))) {
+		  Yap_Error(OUT_OF_STACK_ERROR, TermNil, LOCAL_ErrorMessage);
+		  return false;
+	      }
+	  }
+	  oldTR = TR;
+	  oldH = HR;
+      }
+      if (Yap_unify(t, TDB)) {
+	  if (release) {
+	      if (cur_instance == father_key->FirstInQueue) {
+		  father_key->FirstInQueue = cur_instance->next;
+	      }
+	      if (cur_instance == father_key->LastInQueue) {
+		  father_key->LastInQueue = prev;
+	      }
+	      if (prev) {
+		  prev->next = cur_instance->next;
+	      }
+	      /* release space for cur_instance */
+	      keepdbrefs(cur_instance->DBT PASS_REGS);
+	      ErasePendingRefs(cur_instance->DBT PASS_REGS);
+	      FreeDBSpace((char *) cur_instance->DBT);
+	      FreeDBSpace((char *) cur_instance);
+	  } else {
+	      // undo if you'rejust peeking
+	      while (oldTR < TR) {
+		  CELL d1 = TrailTerm(TR-1);
+		  TR--;
+		  /* normal variable */
+		  RESET_VARIABLE(d1);
+	      }
+
+	  }
+	  return true;
+      } else {
+	  // just getting the first
+	  if (first)
+	    return false;
+	  // but keep on going, if we want to check everything.
+	  prev = cur_instance;
+	  cur_instance = cur_instance->next;
+      }
+  }
+  return false;
+
+}
 
 static Int 
 p_init_queue( USES_REGS1 )
@@ -5055,10 +5300,7 @@ p_init_queue( USES_REGS1 )
     }
   }
   /* Yap_LUClauseSpace += sizeof(db_queue); */
-  dbq->id = FunctorDBRef;
-  dbq->Flags = DBClMask;
-  dbq->FirstInQueue = dbq->LastInQueue = NULL;
-  INIT_RWLOCK(dbq->QRWLock);
+  Yap_init_tqueue( dbq );
   t = MkIntegerTerm((Int)dbq);
   return Yap_unify(ARG1, t);
 }
@@ -5068,8 +5310,8 @@ static Int
 p_enqueue( USES_REGS1 )
 {
   Term Father = Deref(ARG1);
-  QueueEntry *x;
   db_queue *father_key;
+  bool rc;
 
   if (IsVarTerm(Father)) {
     Yap_Error(INSTANTIATION_ERROR, Father, "enqueue");
@@ -5079,34 +5321,16 @@ p_enqueue( USES_REGS1 )
     return FALSE;
   } else
     father_key = (db_queue *)IntegerOfTerm(Father);
-  while ((x = (QueueEntry *)AllocDBSpace(sizeof(QueueEntry))) == NULL) {
-    if (!Yap_growheap(FALSE, sizeof(QueueEntry), NULL)) {
-      Yap_Error(OUT_OF_HEAP_ERROR, TermNil, "in findall");
-      return FALSE;
-    }
-  }
-  /* Yap_LUClauseSpace += sizeof(QueueEntry); */
-  x->DBT = StoreTermInDB(Deref(ARG2), 2 PASS_REGS);
-  if (x->DBT == NULL) {
-    return FALSE;
-  }
-  x->next = NULL;
   WRITE_LOCK(father_key->QRWLock);
-  if (father_key->LastInQueue != NULL)
-    father_key->LastInQueue->next = x;
-  father_key->LastInQueue = x;
-  if (father_key->FirstInQueue == NULL) {
-    father_key->FirstInQueue = x;
-  }
+  rc = Yap_enqueue_tqueue(father_key, Deref(ARG2) PASS_REGS);
   WRITE_UNLOCK(father_key->QRWLock);
-  return TRUE;
+  return rc;
 }
 
 static Int 
 p_enqueue_unlocked( USES_REGS1 )
 {
   Term Father = Deref(ARG1);
-  QueueEntry *x;
   db_queue *father_key;
 
   if (IsVarTerm(Father)) {
@@ -5117,25 +5341,7 @@ p_enqueue_unlocked( USES_REGS1 )
     return FALSE;
   } else
     father_key = (db_queue *)IntegerOfTerm(Father);
-  while ((x = (QueueEntry *)AllocDBSpace(sizeof(QueueEntry))) == NULL) {
-    if (!Yap_growheap(FALSE, sizeof(QueueEntry), NULL)) {
-      Yap_Error(OUT_OF_HEAP_ERROR, TermNil, "in findall");
-      return FALSE;
-    }
-  }
-  /* Yap_LUClauseSpace += sizeof(QueueEntry); */
-  x->DBT = StoreTermInDB(Deref(ARG2), 2 PASS_REGS);
-  if (x->DBT == NULL) {
-    return FALSE;
-  }
-  x->next = NULL;
-  if (father_key->LastInQueue != NULL)
-    father_key->LastInQueue->next = x;
-  father_key->LastInQueue = x;
-  if (father_key->FirstInQueue == NULL) {
-    father_key->FirstInQueue = x;
-  }
-  return TRUE;
+  return Yap_enqueue_tqueue(father_key, Deref(ARG2) PASS_REGS);
 }
 
 /* when reading an entry in the data base we are making it accessible from
@@ -5158,14 +5364,14 @@ keepdbrefs(DBTerm *entryref USES_REGS)
     return;
   }
   while ((ref = *--cp) != NIL) {
-    if (!(ref->Flags & LogUpdMask)) {
-      LOCK(ref->lock);
-      if(!(ref->Flags & InUseMask)) {
-	ref->Flags |= InUseMask;
-	TRAIL_REF(ref);	/* So that fail will erase it */
+      if (!(ref->Flags & LogUpdMask)) {
+	  LOCK(ref->lock);
+	  if(!(ref->Flags & InUseMask)) {
+	      ref->Flags |= InUseMask;
+	      TRAIL_REF(ref);	/* So that fail will erase it */
+	  }
+	  UNLOCK(ref->lock);
       }
-      UNLOCK(ref->lock);
-    }
   }
 
 }
@@ -5178,47 +5384,28 @@ p_dequeue( USES_REGS1 )
   Term Father = Deref(ARG1);
 
   if (IsVarTerm(Father)) {
-    Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
-    return FALSE;
+      Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
+      return FALSE;
   } else if (!IsIntegerTerm(Father)) {
-    Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
-    return FALSE;
-  } else
-    father_key = (db_queue *)IntegerOfTerm(Father);
-  WRITE_LOCK(father_key->QRWLock);
-  if ((cur_instance = father_key->FirstInQueue) == NULL) {
-    /* an empty queue automatically goes away */
-    WRITE_UNLOCK(father_key->QRWLock);
-    FreeDBSpace((char *)father_key);
-    return FALSE;
+      Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
+      return FALSE;
   } else {
-    Term TDB;
-    if (cur_instance == father_key->LastInQueue)
-      father_key->FirstInQueue = father_key->LastInQueue = NULL;
-    else
-      father_key->FirstInQueue = cur_instance->next;
-    WRITE_UNLOCK(father_key->QRWLock);
-    while ((TDB = GetDBTerm(cur_instance->DBT, FALSE PASS_REGS)) == 0L) {
-      if (LOCAL_Error_TYPE == OUT_OF_ATTVARS_ERROR) {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_growglobal(NULL)) {
-	  Yap_Error(OUT_OF_ATTVARS_ERROR, TermNil, LOCAL_ErrorMessage);
+      father_key = (db_queue *)IntegerOfTerm(Father);
+      WRITE_LOCK(father_key->QRWLock);
+      if ((cur_instance = father_key->FirstInQueue) == NULL) {
+	  /* an empty queue automatically goes away */
+	  WRITE_UNLOCK(father_key->QRWLock);
+	  FreeDBSpace((char *)father_key);
 	  return FALSE;
-	}
-      } else {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, gc_P(P,CP))) {
-	  Yap_Error(OUT_OF_STACK_ERROR, TermNil, LOCAL_ErrorMessage);
-	  return FALSE;
-	}
       }
-    }
-    /* release space for cur_instance */
-    keepdbrefs(cur_instance->DBT PASS_REGS);
-    ErasePendingRefs(cur_instance->DBT PASS_REGS);
-    FreeDBSpace((char *) cur_instance->DBT);
-    FreeDBSpace((char *) cur_instance);
-    return Yap_unify(ARG2, TDB);
+      if (!Yap_dequeue_tqueue(father_key, ARG2, true,  true PASS_REGS) )
+	return FALSE;
+      if (cur_instance == father_key->LastInQueue)
+	father_key->FirstInQueue = father_key->LastInQueue = NULL;
+      else
+	father_key->FirstInQueue = cur_instance->next;
+      WRITE_UNLOCK(father_key->QRWLock);
+      return TRUE;
   }
 }
 
@@ -5227,58 +5414,30 @@ static Int
 p_dequeue_unlocked( USES_REGS1 )
 {
   db_queue *father_key;
-  QueueEntry *cur_instance, *prev_instance;
+  QueueEntry *cur_instance;
   Term Father = Deref(ARG1);
 
   if (IsVarTerm(Father)) {
-    Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
-    return FALSE;
+      Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
+      return FALSE;
   } else if (!IsIntegerTerm(Father)) {
-    Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
-    return FALSE;
-  } else
-    father_key = (db_queue *)IntegerOfTerm(Father);
-  prev_instance = NULL;
-  cur_instance = father_key->FirstInQueue;
-  while (cur_instance) {
-    Term TDB;
-    while ((TDB = GetDBTerm(cur_instance->DBT, FALSE PASS_REGS)) == 0L) {
-      if (LOCAL_Error_TYPE == OUT_OF_ATTVARS_ERROR) {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_growglobal(NULL)) {
-	  Yap_Error(OUT_OF_ATTVARS_ERROR, TermNil, LOCAL_ErrorMessage);
+      Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
+      return FALSE;
+  } else {
+      father_key = (db_queue *)IntegerOfTerm(Father);
+      if ((cur_instance = father_key->FirstInQueue) == NULL) {
+	  /* an empty queue automatically goes away */
+	  FreeDBSpace((char *)father_key);
 	  return FALSE;
-	}
-      } else {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, gc_P(P,CP))) {
-	  Yap_Error(OUT_OF_STACK_ERROR, TermNil, LOCAL_ErrorMessage);
-	  return FALSE;
-	}
       }
-    }
-    if (Yap_unify(ARG2, TDB)) {
-      if (prev_instance)  {
-	prev_instance->next = cur_instance->next;
-	if (father_key->LastInQueue == cur_instance)
-	  father_key->LastInQueue = prev_instance;
-      } else if (cur_instance == father_key->LastInQueue)
+      if (!Yap_dequeue_tqueue(father_key, ARG2, true,  true PASS_REGS) )
+	return FALSE;
+      if (cur_instance == father_key->LastInQueue)
 	father_key->FirstInQueue = father_key->LastInQueue = NULL;
       else
 	father_key->FirstInQueue = cur_instance->next;
-      /* release space for cur_instance */
-      keepdbrefs(cur_instance->DBT PASS_REGS);
-      ErasePendingRefs(cur_instance->DBT PASS_REGS);
-      FreeDBSpace((char *) cur_instance->DBT);
-      FreeDBSpace((char *) cur_instance);
       return TRUE;
-    } else {
-      prev_instance = cur_instance;
-      cur_instance = cur_instance->next;
-    }
   }
-  /* an empty queue automatically goes away */
-  return FALSE;
 }
 
 static Int 
@@ -5289,39 +5448,27 @@ p_peek_queue( USES_REGS1 )
   Term Father = Deref(ARG1);
 
   if (IsVarTerm(Father)) {
-    Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
-    return FALSE;
+      Yap_Error(INSTANTIATION_ERROR, Father, "dequeue");
+      return FALSE;
   } else if (!IsIntegerTerm(Father)) {
-    Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
-    return FALSE;
-  } else
-    father_key = (db_queue *)IntegerOfTerm(Father);
-  cur_instance = father_key->FirstInQueue;
-  while (cur_instance) {
-    Term TDB;
-    while ((TDB = GetDBTerm(cur_instance->DBT, FALSE PASS_REGS)) == 0L) {
-      if (LOCAL_Error_TYPE == OUT_OF_ATTVARS_ERROR) {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_growglobal(NULL)) {
-	  Yap_Error(OUT_OF_ATTVARS_ERROR, TermNil, LOCAL_ErrorMessage);
+      Yap_Error(TYPE_ERROR_INTEGER, Father, "dequeue");
+      return FALSE;
+  } else {
+      father_key = (db_queue *)IntegerOfTerm(Father);
+      if ((cur_instance = father_key->FirstInQueue) == NULL) {
+	  /* an empty queue automatically goes away */
+	  FreeDBSpace((char *)father_key);
 	  return FALSE;
-	}
-      } else {
-	LOCAL_Error_TYPE = YAP_NO_ERROR;
-	if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, gc_P(P,CP))) {
-	  Yap_Error(OUT_OF_STACK_ERROR, TermNil, LOCAL_ErrorMessage);
-	  return FALSE;
-	}
       }
-    }
-    if (Yap_unify(ARG2, TDB)) {
+      if (!Yap_dequeue_tqueue(father_key, ARG2, true,  false PASS_REGS) )
+	return FALSE;
+      if (cur_instance == father_key->LastInQueue)
+	father_key->FirstInQueue = father_key->LastInQueue = NULL;
+      else
+	father_key->FirstInQueue = cur_instance->next;
       return TRUE;
-    }
-    cur_instance = cur_instance->next;
   }
-  return FALSE;
 }
-
 
 
 static Int
@@ -5452,8 +5599,14 @@ p_install_thread_local( USES_REGS1 )
     return FALSE;
   }
   PELOCK(69,pe);
+  if (pe->PredFlags & (ThreadLocalPredFlag|LogUpdatePredFlag)) {
+    // second declaration, just ignore
+    UNLOCK(pe->PELock);
+    return TRUE;
+  }
   if (pe->PredFlags & (UserCPredFlag|HiddenPredFlag|CArgsPredFlag|SyncPredFlag|TestPredFlag|AsmPredFlag|StandardPredFlag|CPredFlag|SafePredFlag|IndexedPredFlag|BinaryPredFlag) ||
       pe->cs.p_code.NOfClauses) {
+    UNLOCK(pe->PELock);
     return FALSE;
   }
 #if THREADS
@@ -5471,7 +5624,30 @@ void
 Yap_InitDBPreds(void)
 {
   Yap_InitCPred("recorded", 3, p_recorded, SyncPredFlag);
+/** @pred  recorded(+ _K_, _T_, _R_) 
+
+
+Searches in the internal database under the key  _K_, a term that
+unifies with  _T_ and whose reference matches  _R_. This
+built-in may be used in one of two ways:
+
++ _K_ may be given, in this case the built-in will return all
+elements of the internal data-base that match the key.
++ _R_ may be given, if so returning the key and element that
+match the reference.
+
+
+ 
+*/
   Yap_InitCPred("recorda", 3, p_rcda, SyncPredFlag);
+/** @pred  recorda(+ _K_, _T_,- _R_) 
+
+
+Makes term  _T_ the first record under key  _K_ and  unifies  _R_
+with its reference.
+
+ 
+*/
   Yap_InitCPred("recordz", 3, p_rcdz, SyncPredFlag);
   Yap_InitCPred("$still_variant", 2, p_still_variant, SyncPredFlag);
   Yap_InitCPred("recorda_at", 3, p_rcda_at, SyncPredFlag);
@@ -5524,3 +5700,7 @@ Yap_InitBackDB(void)
   Yap_InitCPredBack("$current_immediate_key", 2, 4, init_current_key, cont_current_key,
 		SyncPredFlag);
 }
+
+/**
+@}
+*/

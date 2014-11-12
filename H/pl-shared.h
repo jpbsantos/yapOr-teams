@@ -23,15 +23,18 @@
 #endif
 
 #ifndef __WINDOWS__
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MSYS__)
 #define __WINDOWS__ 1
 #endif
 #endif
 
+
 // SWI Options
 #define O_STRING		1
 #define O_QUASIQUOTATIONS	1
-#define O_LOCALE		1
+#if HAVE_LOCALE_H && HAVE_SETLOCALE
+//#define O_LOCALE		1
+#endif
 //#define O_ATOMGC		1
 //#define O_CLAUSEGC		1
 #ifdef HAVE_GMP_H
@@ -56,7 +59,7 @@
 #endif
 #endif
 
-
+#include <SWI-Stream.h>
 #include <SWI-Prolog.h>
 
 #define COMMON(X) extern X
@@ -81,10 +84,9 @@ typedef int pthread_t;
 
 typedef uintptr_t		word;		/* Anonymous 4 byte object */
 
-typedef int bool;
-
 
 #define GLOBAL_LD (LOCAL_PL_local_data_p)
+
 
 #if !defined(O_PLMT) && !defined(YAPOR)
 
@@ -128,7 +130,7 @@ typedef int bool;
 
 typedef struct redir_context
 { int		magic;			/* REDIR_MAGIC */
-  IOSTREAM     *stream;			/* temporary output */
+  struct io_stream     *stream;			/* temporary output */
   int		is_stream;		/* redirect to stream */
   int		redirected;		/* output is redirected */
   term_t	term;			/* redirect target */
@@ -196,8 +198,6 @@ typedef struct initialise_handle * InitialiseHandle;
 		*       LOCALE		         *
 		*********************************/
 
-#define O_LOCALE 1
-
 #include "pl-locale.h"		/* Locale objects */
 
 		/********************************
@@ -209,10 +209,12 @@ typedef struct initialise_handle * InitialiseHandle;
 
 // THIS HAS TO BE ABSTRACTED
 
-#define true(s, a)		((s)->flags & (a))
-#define false(s, a)		(!true((s), (a)))
+#ifndef YAP_CPP_INTERFACE
+#define True(s, a)		((s)->flags & (a))
+#define False(s, a)		(!True((s), (a)))
 #define set(s, a)		((s)->flags |= (a))
 #define clear(s, a)		((s)->flags &= ~(a))
+#endif
 
 #define P_QUASI_QUOTATION_SYNTAX	(0x00000004) /* <![Type[Quasi Quote]]> */
 #define PLFLAG_CHARESCAPE           0x000001 /* handle \ in atoms */
@@ -258,13 +260,44 @@ typedef struct initialise_handle * InitialiseHandle;
 extern unsigned int
 getUnknownModule(module_t m);
 
-#define truePrologFlag(flag)      true(&LD->prolog_flag.mask, flag)
+/* keep in sync with style_name/1 in boot/prims.pl */
+
+#define LONGATOM_CHECK      0x0001      /* read/1: error on intptr_t atoms */
+#define SINGLETON_CHECK     0x0002      /* read/1: check singleton vars */
+#define MULTITON_CHECK      0x0004      /* read/1: check multiton vars */
+#define DISCONTIGUOUS_STYLE 0x0008      /* warn on discontiguous predicates */
+#define DYNAMIC_STYLE       0x0010      /* warn on assert/retract active */
+#define CHARSET_CHECK       0x0020      /* warn on unquoted characters */
+#define SEMSINGLETON_CHECK  0x0040      /* Semantic singleton checking */
+#define NOEFFECT_CHECK      0x0080      /* Check for meaningless statements */
+#define VARBRANCH_CHECK     0x0100      /* warn on unbalanced variables */
+#define MULTIPLE_CHECK      0x0200      /* warn on multiple file definitions for a predicate */
+#define MAXNEWLINES         5           /* maximum # of newlines in atom */
+
+#define debugstatus            (LD->_debugstatus)
+
+#define truePrologFlag(flag)      True(&LD->prolog_flag.mask, flag)
 #define setPrologFlagMask(flag)   set(&LD->prolog_flag.mask, flag)
 #define clearPrologFlagMask(flag) clear(&LD->prolog_flag.mask, flag)
 
+#ifndef YAP_CPP_INTERFACE
 COMMON(int)		debugmode(debug_type new, debug_type *old);
 COMMON(int)		tracemode(debug_type new, debug_type *old);
+#endif
 COMMON(void)		Yap_setCurrentSourceLocation( void *rd );
+
+#define SIG_PROLOG_OFFSET	32	/* Start of Prolog signals */
+
+#define SIG_EXCEPTION	  (SIG_PROLOG_OFFSET+0)
+#ifdef O_ATOMGC
+#define SIG_ATOM_GC	  (SIG_PROLOG_OFFSET+1)
+#endif
+#define SIG_GC		  (SIG_PROLOG_OFFSET+2)
+#ifdef O_PLMT
+#define SIG_THREAD_SIGNAL (SIG_PROLOG_OFFSET+3)
+#endif
+#define SIG_FREECLAUSES	  (SIG_PROLOG_OFFSET+4)
+#define SIG_PLABORT	  (SIG_PROLOG_OFFSET+5)
 
 extern int raiseSignal(PL_local_data_t *ld, int sig);
 
@@ -298,7 +331,7 @@ atom_t                YAP_SWIAtomFromAtom(Atom at);
 static inline Functor
 SWIFunctorToFunctor(functor_t f)
 {
-  if ((CELL)(f) & 2 && ((CELL)f) < N_SWI_FUNCTORS*4+2)
+  if (((CELL)(f) & 2) && ((CELL)f) < N_SWI_FUNCTORS*4+2)
     return SWI_Functors[((CELL)f)/4];
   return (Functor)f;
 }
@@ -310,7 +343,7 @@ OpenList(int n USES_REGS)
   BACKUP_H();
 
   while (HR+2*n > ASP-1024) {
-    if (!Yap_dogc( 0, NULL PASS_REGS )) {
+    if (!Yap_dogc( 0, (Term *)NULL PASS_REGS )) {
       RECOVER_H();
       return FALSE;
     }
@@ -347,7 +380,6 @@ CloseList(Term t0, Term tail)
     return FALSE;
   return TRUE;
 }
-
 
 
 #endif /* PL_SHARED_INCLUDE */

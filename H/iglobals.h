@@ -34,6 +34,10 @@ static void InitGlobal(void) {
 
   GLOBAL_AGcThreshold = 10000;
   GLOBAL_AGCHook = NULL;
+#if __ANDROID__
+
+  GLOBAL_assetManager = GLOBAL_assetManager;
+#endif
 
 #if THREADS
 
@@ -57,10 +61,14 @@ static void InitGlobal(void) {
 
 #if defined(THREADS)
 
+  GLOBAL_named_mboxes = NULL;
+  INIT_LOCK(GLOBAL_mboxq_lock);
+  GLOBAL_mbox_count = 0;
+
 #endif /* THREADS */
 
-  GLOBAL_stdout = stdout;
-  GLOBAL_stderr = stderr;
+  GLOBAL_stdout = Soutput;
+  GLOBAL_stderr = Serror;
 
 
 

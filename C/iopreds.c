@@ -196,7 +196,15 @@ Yap_DebugPutc(int sno, wchar_t ch)
 {
   if (GLOBAL_Option['l' - 96])
     (void) putc(ch, GLOBAL_logfile);
-  return (putc(ch, GLOBAL_stderr));
+  return (Sputc(ch, GLOBAL_stderr));
+}
+
+static int 
+Yap_DebugPuts(int sno, const char * s)
+{
+  if (GLOBAL_Option['l' - 96])
+    (void) fputs(s, GLOBAL_logfile);
+  return (Sfputs(s, GLOBAL_stderr));
 }
 
 void
@@ -210,6 +218,13 @@ Yap_DebugErrorPutc(int c)
 {
   CACHE_REGS
    Yap_DebugPutc (LOCAL_c_error_stream, c);
+}
+
+void 
+Yap_DebugErrorPuts(const char *s)
+{
+  CACHE_REGS
+   Yap_DebugPuts (LOCAL_c_error_stream, s);
 }
 
 #endif
@@ -355,6 +370,8 @@ syntax_error (TokEntry * tokptr, IOSTREAM *st, Term *outp)
 	char s[2];
 	s[1] = '\0';
 	s[0] = (char)info;
+	if (s[0] == 'l') 
+	  s[0] = '(';
 	ts[0] = MkAtomTerm(Yap_LookupAtom(s));
       }
     }
@@ -482,14 +499,13 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
 {
   CACHE_REGS
   TokEntry *tokstart;
-  Term t, v;
+  Term t;
   Term OCurrentModule = CurrentModule, tmod, tpos;
   int store_comments = rd->comments;
 
   if (inp_stream == NULL) {
     return FALSE;
   }
-  CurrentModule = tmod = MkAtomTerm(rd->module->AtomOfME);
   LOCAL_Error_TYPE = YAP_NO_ERROR;
   while (TRUE) {
     CELL *old_H;
@@ -551,11 +567,12 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
       } else {
 	Yap_clean_tokenizer(tokstart, LOCAL_VarTable, LOCAL_AnonVarTable, LOCAL_Comments);
 	rd->varnames = 0;
+	rd->singles = 0;
 	return Yap_unify_constant( Yap_GetFromSlot( t0 PASS_REGS), MkAtomTerm (AtomEof));
       }
     }
   repeat_cycle:
-    CurrentModule = tmod;
+    CurrentModule = tmod = MkAtomTerm(rd->module->AtomOfME);
     if (LOCAL_ErrorMessage || (t = Yap_Parse(rd)) == 0) {
       CurrentModule = OCurrentModule;
       if (LOCAL_ErrorMessage) {
@@ -598,6 +615,7 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
 	Yap_clean_tokenizer(tokstart, LOCAL_VarTable, LOCAL_AnonVarTable, LOCAL_Comments);
 	rd->has_exception = TRUE;
 	rd->exception = Yap_InitSlot(terror PASS_REGS);
+	CurrentModule = OCurrentModule;
 	return FALSE;
       }
     } else {
@@ -611,6 +629,7 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
   if (store_comments && !Yap_unify(LOCAL_Comments, Yap_GetFromSlot( rd->comments PASS_REGS)))
     return FALSE;
   if (rd->varnames) {
+      Term v;
     while (TRUE) {
       CELL *old_H = HR;
 
@@ -630,12 +649,14 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
 	TR = old_TR;
       }
     }
-    if (!Yap_unify(v, Yap_GetFromSlot( rd->varnames PASS_REGS)))
+    if (!Yap_unify(v, Yap_GetFromSlot( rd->varnames PASS_REGS))) {
+      CurrentModule = OCurrentModule;
       return FALSE;
+    }
   }
 
-
   if (rd->variables) {
+      Term v;
     while (TRUE) {
       CELL *old_H = HR;
 
@@ -655,10 +676,13 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
 	TR = old_TR;
       }
     }
-    if (!Yap_unify(v, Yap_GetFromSlot( rd->variables PASS_REGS)))
+    if (!Yap_unify(v, Yap_GetFromSlot( rd->variables PASS_REGS))) {
+      CurrentModule = OCurrentModule;
       return FALSE;
+    }
   }
   if (rd->singles) {
+    Term v;
     while (TRUE) {
       CELL *old_H = HR;
 
@@ -678,10 +702,20 @@ Yap_read_term(term_t t0, IOSTREAM *inp_stream, struct read_data_t *rd)
 	TR = old_TR;
       }
     }
-    if (!Yap_unify(v, Yap_GetFromSlot( rd->singles PASS_REGS)))
-      return FALSE;
+    if (rd->singles == 1) {
+      if (IsPairTerm(v))
+	rd->singles = Yap_InitSlot( v PASS_REGS);
+      else
+	rd->singles = FALSE;
+    } else if (rd->singles) {
+      if (!Yap_unify( v, Yap_GetFromSlot( rd->singles PASS_REGS ))) {
+	CurrentModule = OCurrentModule;
+	return FALSE;
+      }
+    }
   }
   Yap_clean_tokenizer(tokstart, LOCAL_VarTable, LOCAL_AnonVarTable, LOCAL_Comments);
+  CurrentModule = OCurrentModule;
   return TRUE;
 }
 
@@ -869,6 +903,68 @@ p_float_format( USES_REGS1 )
   return TRUE;
 }
 
+
+static Int 
+p_style_checker( USES_REGS1 )
+{
+  Term t = Deref( ARG1 );
+  LD_FROM_REGS
+
+  if (IsVarTerm(t)) {
+    Term t = TermNil;
+    if ( debugstatus.styleCheck & LONGATOM_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomAtom), t );
+    }
+    if ( debugstatus.styleCheck & SINGLETON_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomSingleton), t );
+    }
+    if ( debugstatus.styleCheck & MULTITON_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomVarBranches), t );
+    }
+    if ( debugstatus.styleCheck & DISCONTIGUOUS_STYLE) {
+      t = MkPairTerm( MkAtomTerm(AtomDiscontiguous), t );
+    }
+    if ( debugstatus.styleCheck & NOEFFECT_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomNoEffect), t );
+    }
+    if ( debugstatus.styleCheck & CHARSET_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomCharset), t );
+    }
+    if ( debugstatus.styleCheck & MULTIPLE_CHECK) {
+      t = MkPairTerm( MkAtomTerm(AtomMultiple), t );
+    }
+  } else {
+    while (IsPairTerm(t)) {
+      Term h = HeadOfTerm( t );
+      t = TailOfTerm( t );
+
+      if (IsVarTerm(h)) {
+	Yap_Error(INSTANTIATION_ERROR, t, "style_check/1");
+	return (FALSE);    
+      } if (IsAtomTerm(h)) {
+	Atom at = AtomOfTerm( h );
+	if (at == AtomAtom) debugstatus.styleCheck |= LONGATOM_CHECK;
+	else if (at == AtomSingleton) debugstatus.styleCheck |= SINGLETON_CHECK;
+	else if (at == AtomVarBranches) debugstatus.styleCheck |= MULTITON_CHECK;
+	else if (at == AtomDiscontiguous) debugstatus.styleCheck |= DISCONTIGUOUS_STYLE;
+	else if (at == AtomNoEffect) debugstatus.styleCheck |= NOEFFECT_CHECK;
+	else if (at == AtomCharset) debugstatus.styleCheck |= CHARSET_CHECK;
+	else if (at == AtomMultiple) debugstatus.styleCheck |= MULTIPLE_CHECK;
+      } else {
+	Atom at = AtomOfTerm( ArgOfTerm( 1, h ) );
+	if (at == AtomAtom) debugstatus.styleCheck |= LONGATOM_CHECK;
+	else if (at == AtomSingleton) debugstatus.styleCheck &= ~SINGLETON_CHECK;
+	else if (at == AtomVarBranches) debugstatus.styleCheck &= ~MULTITON_CHECK;
+	else if (at == AtomDiscontiguous) debugstatus.styleCheck &= ~DISCONTIGUOUS_STYLE;
+	else if (at == AtomNoEffect) debugstatus.styleCheck &= ~NOEFFECT_CHECK;
+	else if (at == AtomMultiple) debugstatus.styleCheck &= ~MULTIPLE_CHECK;
+      }
+    }
+  }
+  return TRUE;
+}
+
+
 void
 Yap_InitBackIO (void)
 {
@@ -884,10 +980,8 @@ p_write_string( USES_REGS1 )
   int encoding;
   char buf[256];
 
-  if ((s = Yap_TermToString( in, NULL, 0, &length, &encoding, 0)))
-    fprintf(stderr,"%ld %s\n",length, s);
   if ((s = Yap_TermToString( in, buf, 256, &length, &encoding, 0)))
-    fprintf(stderr,"%ld %s\n",length, s);
+    fprintf(stderr,"%s\n", s);
   return TRUE;
 }
 #endif
@@ -905,13 +999,47 @@ Yap_InitIOPreds(void)
   Yap_InitCPred ("$change_type_of_char", 2, p_change_type_of_char, SafePredFlag|SyncPredFlag);
   Yap_InitCPred ("$type_of_char", 2, p_type_of_char, SafePredFlag|SyncPredFlag);
   Yap_InitCPred ("char_conversion", 2, p_char_conversion, SyncPredFlag);
+/** @pred char_conversion(+ _IN_,+ _OUT_) is iso 
+
+
+While reading terms convert unquoted occurrences of the character
+ _IN_ to the character  _OUT_. Both  _IN_ and  _OUT_ must be
+bound to single characters atoms.
+
+Character conversion only works if the flag `char_conversion` is
+on. This is default in the `iso` and `sicstus` language
+modes. As an example, character conversion can be used for instance to
+convert characters from the ISO-LATIN-1 character set to ASCII.
+
+If  _IN_ is the same character as  _OUT_, char_conversion/2
+will remove this conversion from the table.
+
+ 
+*/
   Yap_InitCPred ("$current_char_conversion", 2, p_current_char_conversion, SyncPredFlag);
   Yap_InitCPred ("$all_char_conversions", 1, p_all_char_conversions, SyncPredFlag);
   Yap_InitCPred ("$force_char_conversion", 0, p_force_char_conversion, SyncPredFlag);
   Yap_InitCPred ("$disable_char_conversion", 0, p_disable_char_conversion, SyncPredFlag);
 #if HAVE_SELECT
     //  Yap_InitCPred ("stream_select", 3, p_stream_select, SafePredFlag|SyncPredFlag);
+/** @pred  stream_select(+ _STREAMS_,+ _TIMEOUT_,- _READSTREAMS_) 
+
+
+Given a list of open  _STREAMS_ opened in read mode and a  _TIMEOUT_
+return a list of streams who are now available for reading. 
+
+If the  _TIMEOUT_ is instantiated to `off`,
+stream_select/3 will wait indefinitely for a stream to become
+open. Otherwise the timeout must be of the form `SECS:USECS` where
+`SECS` is an integer gives the number of seconds to wait for a timeout
+and `USECS` adds the number of micro-seconds.
+
+This built-in is only defined if the system call `select` is
+available in the system.
+
+ 
+*/
 #endif
   Yap_InitCPred ("$float_format", 1, p_float_format, SafePredFlag|SyncPredFlag);
-
+  Yap_InitCPred ("$style_checker", 1, p_style_checker, SyncPredFlag);
 }

@@ -99,22 +99,9 @@ extern int rl_done;			/* should be in readline.h, but */
 					/* isn't in some versions ... */
 #ifdef HAVE_READLINE_HISTORY_H
 #include <readline/history.h>
-#else
-extern void add_history(char *);	/* should be in readline.h */
 #endif
 					/* missing prototypes in older */
 					/* readline.h versions */
-extern int rl_begin_undo_group(void);	/* delete when conflict arrises! */
-extern int rl_end_undo_group(void);
-extern Function *rl_event_hook;
-#ifndef HAVE_RL_FILENAME_COMPLETION_FUNCTION
-#define rl_filename_completion_function filename_completion_function
-extern char *filename_completion_function(const char *, int);
-#endif
-
-#ifndef HAVE_RL_COMPLETION_MATCHES
-#define rl_completion_matches completion_matches
-#endif
 
 #ifndef RL_STATE_INITIALIZED
 int rl_readline_state = 0;
@@ -415,7 +402,6 @@ Sread_readline(void *handle, char *buf, size_t size)
   int fd = (int) h;
   int ttymode = PL_ttymode(Suser_input); /* Not so nice */
   int rval;
-
   PL_write_prompt(ttymode == PL_NOTTY);
 
   switch( ttymode )
@@ -454,11 +440,10 @@ Sread_readline(void *handle, char *buf, size_t size)
       }
 #endif
 
-#ifdef HAVE_RL_EVENT_HOOK
-      if ( PL_dispatch(0, PL_DISPATCH_INSTALLED) )
-	rl_event_hook = event_hook;
-      else
+#if HAVE_DECL_RL_EVENT_HOOK_
+      if ( !PL_dispatch(0, PL_DISPATCH_INSTALLED) ) {
 	rl_event_hook = NULL;
+      }
 #endif
 
       prompt = PL_prompt_string(fd);
@@ -474,6 +459,9 @@ Sread_readline(void *handle, char *buf, size_t size)
 	  reset_readline();
 	}
 
+#if __YAP_PROLOG__
+	rl_outstream = stderr;
+#endif
 	if ( in_readline++ )
 	{ int state = rl_readline_state;
 
@@ -521,18 +509,18 @@ Sread_readline(void *handle, char *buf, size_t size)
 static int
 prolog_complete(int ignore, int key)
 { if ( rl_point > 0 && rl_line_buffer[rl_point-1] != ' ' )
-  { rl_begin_undo_group();
+  {
+#if HAVE_DECL_RL_CATCH_SIGNALS_	/* actually version >= 1.2, or true readline */
+	rl_begin_undo_group();
     rl_complete(ignore, key);
     if ( rl_point > 0 && rl_line_buffer[rl_point-1] == ' ' )
     {
-#ifdef HAVE_RL_INSERT_CLOSE		/* actually version >= 1.2 */
       rl_delete_text(rl_point-1, rl_point);
       rl_point -= 1;
-#else
       rl_delete(-1, key);
-#endif
     }
     rl_end_undo_group();
+#endif
   } else
     rl_complete(ignore, key);
 
@@ -589,10 +577,15 @@ PL_install_readline(void)
 #ifndef __WINDOWS__
   if ( !truePrologFlag(PLFLAG_TTY_CONTROL) || !isatty(0) )
     return;
+  // don't allow YAP to run readline under an Eclipse Console
+  if (getenv("EclipseVersion"))
+	return;
 #endif
 
   alevel = setAccessLevel(ACCESS_LEVEL_SYSTEM);
+#if HAVE_DECL_RL_CATCH_SIGNALS_
   rl_catch_signals = 0;
+#endif
   rl_readline_name = "Prolog";
   rl_attempted_completion_function = prolog_completion;
 #ifdef __WINDOWS__
@@ -600,7 +593,11 @@ PL_install_readline(void)
 #else
   rl_basic_word_break_characters = ":\t\n\"\\'`@$><= [](){}+*!,|%&?";
 #endif
+#ifdef HAVE_RL_COMPLETION_FUNC_T
   rl_add_defun("prolog-complete", prolog_complete, '\t');
+#else
+  rl_add_defun("prolog-complete", (void *)prolog_complete, '\t');
+#endif
 #if HAVE_RL_INSERT_CLOSE
   rl_add_defun("insert-close", rl_insert_close, ')');
 #endif

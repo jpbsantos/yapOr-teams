@@ -55,7 +55,8 @@ typedef struct worker_local {
   char*  ScannerStack_;
   struct scanner_extra_alloc*  ScannerExtraBlocks_;
   struct DB_TERM*  BallTerm_;
-  UInt  ActiveSignals_;
+  UInt  MaxActiveSignals_;
+  uint64_t  Signals_;
   UInt  IPredArity_;
   yamop*  ProfEnd_;
   int  UncaughtThrow_;
@@ -131,9 +132,6 @@ typedef struct worker_local {
   Int  total_choicepoints_;
 #endif
   int  consult_level_;
-#if defined(YAPOR) || defined(THREADS)
-  lockvar  SignalLock_;
-#endif
 
   ADDR  LocalBase_;
   ADDR  GlobalBase_;
@@ -175,6 +173,8 @@ typedef struct worker_local {
   struct db_globs*  s_dbg_;
 
   yap_error_number  matherror_;
+  Term  mathtt_;
+  char*  mathstring_;
   yap_error_number  CurrentError_;
 
   int  heap_overflows_;
@@ -224,6 +224,11 @@ typedef struct worker_local {
   UInt  ImportDBRefHashTableNum_;
   yamop  *ImportFAILCODE_;
   Functor  FunctorVar_;
+#if __ANDROID__
+
+  struct AAssetManager*  assetManager_;
+  char*  InAssetDir_;
+#endif
 
   UInt  ibnds_[256];
   struct index_t*  exo_it_;
@@ -233,7 +238,7 @@ typedef struct worker_local {
 
   struct scan_atoms*  search_atoms_;
 
-  Int  CurSlot_;
+  yhandle_t  CurSlot_;
   Term  SourceModule_;
   size_t  MAX_SIZE_;
 } w_local;

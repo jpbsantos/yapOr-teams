@@ -11,6 +11,30 @@
 #include "up/em_aux.h"
 #include "up/util.h"
 
+int check_smooth(int *smooth);
+void initialize_params(void);
+int compute_inside_scaling_none(void);
+int compute_inside_scaling_none(void);
+int compute_daem_inside_scaling_none(void);
+int compute_daem_inside_scaling_log_exp(void);
+int examine_inside_scaling_none(void);
+int examine_inside_scaling_log_exp(void);
+int compute_expectation_scaling_none(void);
+int compute_inside_scaling_log_exp(void);
+int compute_expectation_scaling_log_exp(void);
+double compute_daem_log_prior(void);
+double compute_likelihood_scaling_none(void);
+void release_num_sw_vals(void);
+void transfer_hyperparams_prolog(void);
+double compute_likelihood_scaling_log_exp(void);
+void save_params(void);
+void restore_params(void);
+double compute_log_prior(void);
+double compute_bic(double likelihood);
+double compute_cs(double likelihood);
+int update_params(void);
+
+int update_params_smooth(void);
 /*------------------------------------------------------------------------*/
 
 /* We check if all smoothing constants are positive (MAP),
@@ -48,6 +72,7 @@ int check_smooth(int *smooth)
     case 1: /* p.counts = (none), with 0-valued params */
         emit_internal_error("unexpected case in check_smooth()");
         RET_ERR(ierr_unmatched_branches);
+	break;
     case 2: /* p.counts = 0 only, w/o  0-valued params */
     case 3: /* p.counts = 0 only, with 0-valued params */
         *smooth = 0;
@@ -58,6 +83,7 @@ int check_smooth(int *smooth)
     case 5: /* p.counts = + only, with 0-valued params */
         emit_error("parameters fixed to zero in MAP estimation");
         RET_ERR(err_invalid_numeric_value);
+        break;
     case 6: /* p.counts = (both), w/o  0-valued params */
     case 7: /* p.counts = (both), with 0-valued params */
         emit_error("mixture of zero and non-zero pseudo counts");

@@ -23,6 +23,7 @@
   AtomArrayOverflow = AtomAdjust(AtomArrayOverflow);
   AtomArrayType = AtomAdjust(AtomArrayType);
   AtomArrow = AtomAdjust(AtomArrow);
+  AtomDoubleArrow = AtomAdjust(AtomDoubleArrow);
   AtomAssert = AtomAdjust(AtomAssert);
   AtomEmptyBrackets = AtomAdjust(AtomEmptyBrackets);
   AtomEmptySquareBrackets = AtomAdjust(AtomEmptySquareBrackets);
@@ -54,10 +55,12 @@
   AtomCharsio = AtomAdjust(AtomCharsio);
   AtomCharacter = AtomAdjust(AtomCharacter);
   AtomCharacterCode = AtomAdjust(AtomCharacterCode);
+  AtomCharset = AtomAdjust(AtomCharset);
   AtomCleanCall = AtomAdjust(AtomCleanCall);
   AtomColomn = AtomAdjust(AtomColomn);
   AtomCodeSpace = AtomAdjust(AtomCodeSpace);
   AtomCodes = AtomAdjust(AtomCodes);
+  AtomCoInductive = AtomAdjust(AtomCoInductive);
   AtomComma = AtomAdjust(AtomComma);
   AtomCommentHook = AtomAdjust(AtomCommentHook);
   AtomCompound = AtomAdjust(AtomCompound);
@@ -84,6 +87,7 @@
   AtomDefault = AtomAdjust(AtomDefault);
   AtomDevNull = AtomAdjust(AtomDevNull);
   AtomDiff = AtomAdjust(AtomDiff);
+  AtomDiscontiguous = AtomAdjust(AtomDiscontiguous);
   AtomDollar = AtomAdjust(AtomDollar);
   AtomDoLogUpdClause = AtomAdjust(AtomDoLogUpdClause);
   AtomDoLogUpdClause0 = AtomAdjust(AtomDoLogUpdClause0);
@@ -186,6 +190,7 @@
   AtomModify = AtomAdjust(AtomModify);
   AtomMost = AtomAdjust(AtomMost);
   AtomMultiFile = AtomAdjust(AtomMultiFile);
+  AtomMultiple = AtomAdjust(AtomMultiple);
   AtomMutable = AtomAdjust(AtomMutable);
   AtomMutableVariable = AtomAdjust(AtomMutableVariable);
   AtomMyddasDB = AtomAdjust(AtomMyddasDB);
@@ -198,6 +203,7 @@
   AtomNb = AtomAdjust(AtomNb);
   AtomNbTerm = AtomAdjust(AtomNbTerm);
   AtomNew = AtomAdjust(AtomNew);
+  AtomNoEffect = AtomAdjust(AtomNoEffect);
   AtomNoMemory = AtomAdjust(AtomNoMemory);
   AtomNone = AtomAdjust(AtomNone);
   AtomNonEmptyList = AtomAdjust(AtomNonEmptyList);
@@ -273,6 +279,7 @@
   AtomSigCreep = AtomAdjust(AtomSigCreep);
   AtomSigDebug = AtomAdjust(AtomSigDebug);
   AtomSigDelayCreep = AtomAdjust(AtomSigDelayCreep);
+  AtomSigFPE = AtomAdjust(AtomSigFPE);
   AtomSigHup = AtomAdjust(AtomSigHup);
   AtomSigInt = AtomAdjust(AtomSigInt);
   AtomSigIti = AtomAdjust(AtomSigIti);
@@ -285,6 +292,7 @@
   AtomSigUsr2 = AtomAdjust(AtomSigUsr2);
   AtomSigVTAlarm = AtomAdjust(AtomSigVTAlarm);
   AtomSigWakeUp = AtomAdjust(AtomSigWakeUp);
+  AtomSingleton = AtomAdjust(AtomSingleton);
   AtomSlash = AtomAdjust(AtomSlash);
   AtomSocket = AtomAdjust(AtomSocket);
   AtomSourceSink = AtomAdjust(AtomSourceSink);
@@ -338,6 +346,7 @@
   AtomUserOut = AtomAdjust(AtomUserOut);
   AtomVBar = AtomAdjust(AtomVBar);
   AtomVar = AtomAdjust(AtomVar);
+  AtomVarBranches = AtomAdjust(AtomVarBranches);
   AtomHiddenVar = AtomAdjust(AtomHiddenVar);
   AtomVariable = AtomAdjust(AtomVariable);
   AtomVersionNumber = AtomAdjust(AtomVersionNumber);
@@ -353,6 +362,8 @@
   FunctorArg = FuncAdjust(FunctorArg);
   FunctorArrayEntry = FuncAdjust(FunctorArrayEntry);
   FunctorArrow = FuncAdjust(FunctorArrow);
+  FunctorDoubleArrow = FuncAdjust(FunctorDoubleArrow);
+  FunctorAssert1 = FuncAdjust(FunctorAssert1);
   FunctorAssert = FuncAdjust(FunctorAssert);
   FunctorAtFoundOne = FuncAdjust(FunctorAtFoundOne);
   FunctorAtom = FuncAdjust(FunctorAtom);

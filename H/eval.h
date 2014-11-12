@@ -15,6 +15,93 @@
 *									 *
 *************************************************************************/
 
+/**
+
+    @defgroup arithmetic Arithmetic in YAP 
+
+@ingroup YAPBuiltins
+
+  + See @ref arithmetic_preds for the predicates that implement arithment
+
+  + See @ref arithmetic_cmps for the arithmetic comparisons supported in YAP
+
+  + See @ref arithmetic_operators for what arithmetic operations are supported in YAP
+
+    @tableofcontents
+
+    YAP supports several different numeric types:
+<ul>
+ <li><b>Tagged integers</b><p>
+
+ YAP supports integers of word size: 32 bits on 32-bit machines, and
+ 64-bits on 64-bit machines.The engine transprently tags smaller
+ integers are tagged so that they fit in a single word. These are the
+ so called <em>tagged integers</em>.
+
+ <li><b>Large integers</b><p>
+ Larger integers that still fit in a cell
+ are represented in the Prolog goal stack. The difference between
+ these integers and tagged integers should be transparent to the programmer.
+
+</li>
+<li><b>Multiple Precision Integers</b><p>
+
+When YAP is built using the GNU multiple precision arithmetic library
+(GMP), integer arithmetic is unbounded, which means that the size of
+integers is only limited by available memory. The type of integer
+support can be detected using the Prolog flags bounded, min_integer
+and max_integer. As the use of GMP is default, most of the following
+descriptions assume unbounded integer arithmetic.
+
+</li> <li><b>Rational numbers (Q)</b><p> Rational numbers are
+quotients of two integers. Rational arithmetic is provided if GMP is
+used. Rational numbers that are returned from is/2 are canonical,
+which means the denominator _M_ is positive and that the numerator _N_
+and _M_ have no common divisors. Rational numbers are introduced in
+the computation using the [rational/1][@ref rational_1],
+[rationalize/1][@ref rationalize/1] or the [rdiv/2][@ref rdiv/2]
+(rational division) function.
+
+</li>
+ <li><b>Floating point numbers</b><p>
+
+Floating point numbers are represented using the C-type double. On
+most today platforms these are 64-bit IEEE-754 floating point
+numbers. YAP now includes the built-in predicates [isinf/1][@ref isinf/1] and to [isnan/1][@ref isnan/1] tests.
+</li>
+</ul>
+
+Arithmetic functions that require integer arguments accept, in addition
+to integers, rational numbers with denominator `1' and floating point
+numbers that can be accurately converted to integers. If the required
+argument is a float the argument is converted to float. Note that
+conversion of integers to floating point numbers may raise an overflow
+exception. In all other cases, arguments are converted to the same type
+using the order integer to rational number to floating point number.
+
+Evaluation generates the following _Call_
+exceptions:
+
+   @exception "error(instantiation_error, Call )" if not ground
+
+   @exception "type_error(evaluable( V ), Call)" if not evaluable term
+   @exception "type_error(integer( V ), Call)" if must be integer
+   @exception "type_error(float( V ), Call)" if must be float
+
+   @exception "domain_error(out_of_range( V ), Call)" if argument invalid
+   @exception "domain_error(not_less_than_zero( V ), Call)" if argument must be positive or zero
+
+   @exception "evaluation_error(undefined( V ), Call)" result is not defined (nan)
+   @exception "evaluation_error(overflow( V ), Call)" result is arithmetic overflow
+   
+@secreflist
+@refitem is/2
+@refitem isnan/1
+@endsecreflist
+
+
+ **/
+
 #include <stdlib.h>
 
 /* C library used to implement floating point functions */
@@ -29,6 +116,9 @@
 #endif
 #ifdef HAVE_LIMITS_H
 #include <limits.h>
+#endif
+#ifdef HAVE_FENV_H
+#include <fenv.h>
 #endif
 
 #ifdef LONG_MAX
@@ -48,10 +138,39 @@
 #define PLMAXINT Int_MAX
 #define PLMININT Int_MIN
 
+/**
+ * @addtogroup arithmetic_operators
+ * @enum arith0_op constant operators 
+ * @brief specifies the available unary arithmetic operators
+*/
 typedef enum {
+  /** pi [ISO]
+
+     An approximation to the value of <em>pi</em>, that is, the ratio of a circle's circumference to its diameter.
+   * 
+   */
   op_pi,
+  /** e
+
+     Euler's number, the base of the natural logarithms (approximately 2.718281828).
+   * 
+   */
   op_e,
+  /** epsilon
+
+     The difference between the float `1.0` and the next largest floating point number.
+   * 
+   */
   op_epsilon,
+  /** inf
+
+     Infinity according to the IEEE Floating-Point standard. Note that evaluating this term will generate a domain error in the `iso` language mode. Also note that
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  ?- +inf =:= -inf.
+   * false.
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   * 
+   */
   op_inf,
   op_nan,
   op_random,
@@ -65,12 +184,70 @@ typedef enum {
   op_stackfree
 } arith0_op;
 
+/**
+ * @addtogroup arithmetic_operators
+ * @enum arith1_op unary operators 
+ * @brief specifies the available unary arithmetic operators
+ */
 typedef enum {
+  /** \+ _X_: the value of _X_ .
+   * 
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  X =:= +X.
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   */
   op_uplus,
+  /**  \- _X_: the complement of _X_ .
+   * 
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  0-X =:= -X.
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   */
   op_uminus,
+  /** \\ _X_, The bitwise negation of _X_ .
+   * 
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  \X /\ X =:= 0.
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   *
+   * Note that the number of bits of an integer is at least the size in bits of a Prolog term cell.
+   */
   op_unot,
+  /** exp( _X_ ), natural exponentiation of _X_ .
+   * 
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  X = 0.0, abs(1.0 - exp( _X_ )) < 0.0001
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   *
+   */
   op_exp,
+  /** log( _X_ ), natural logarithm of _X_ .
+   *
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+   *  X = 1.0, abs( log( exp( _X_ )) -1.0) < 0.0001
+   *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   *
+   */
   op_log,
+  /** log10( _X_ ) [ISO]
+	*
+    * Decimal logarithm.
+    *
+    *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.prolog}
+    *   ?- between(1, 10, I), Delta is log10(I*10) + log10(1/(I*10)), format('0 == ~3g~n',[Delta]), fail.
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 0
+    *   0 == 2.22e-16
+    *   0 == 0
+    *   false.
+    *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    */
   op_log10,
   op_sqrt,
   op_sin,
@@ -106,6 +283,11 @@ typedef enum {
   op_random1
 } arith1_op;
 
+/**
+ * @addtogroup arithmetic_operators
+ * @enum arith2_op binary operators 
+ * @brief specifies the available unary arithmetic operators
+ */
 typedef enum {
   op_plus,
   op_minus,
@@ -134,6 +316,8 @@ typedef enum {
   op_rdiv
 } arith2_op;
 
+yap_error_number
+Yap_MathException__(USES_REGS1);
 Functor     EvalArg(Term);
 
 /* Needed to handle numbers:
@@ -179,34 +363,46 @@ Term	Yap_eval_atom(Int);
 Term	Yap_eval_unary(Int,Term);
 Term	Yap_eval_binary(Int,Term,Term);
 
-Term	Yap_InnerEval(Term);
+Term	Yap_InnerEval__(Term USES_REGS);
 Int     Yap_ArithError(yap_error_number,Term,char *msg, ...);
+yamop*  Yap_EvalError(yap_error_number,Term,char *msg, ...);
 
 #include "inline-only.h"
-INLINE_ONLY inline EXTERN Term
-Yap_Eval(Term t);
+
+#define Yap_MathException() Yap_MathException__(PASS_REGS1)
+
+#define Yap_InnerEval(x) Yap_InnerEval__(x PASS_REGS)
+#define Yap_Eval(x) Yap_Eval__(x PASS_REGS)
+#define Yap_FoundArithError() Yap_FoundArithError__(PASS_REGS1)
+
+INLINE_ONLY inline EXTERN Term Yap_Eval__(Term t USES_REGS);
 
 INLINE_ONLY inline EXTERN Term
-Yap_Eval(Term t)
+Yap_Eval__(Term t USES_REGS)
 {
   if (t == 0L || ( !IsVarTerm(t) && IsNumTerm(t) ))
     return t;
   return Yap_InnerEval(t);
 }
 
-#ifdef P
-inline static Term
-Yap_FoundArithError(Term t, Term inp)
-{ 
-  CACHE_REGS
-  if (LOCAL_Error_TYPE) {
-    Yap_Error(LOCAL_Error_TYPE, (inp ? inp : LOCAL_Error_Term), LOCAL_ErrorMessage);
-    P = FAILCODE;
-    return 0L;
-  }
-  return t;
+inline static void
+Yap_ClearExs(void)
+{
+  feclearexcept(FE_ALL_EXCEPT);
 }
-#endif
+
+inline static   yap_error_number 
+Yap_FoundArithError__(USES_REGS1)
+{ 
+  if (LOCAL_Error_TYPE != YAP_NO_ERROR)
+    return LOCAL_Error_TYPE;
+  if (yap_flags[FLOATING_POINT_EXCEPTION_MODE_FLAG]) // test support for exception
+    return Yap_MathException();
+  return YAP_NO_ERROR;
+}
+
+Atom Yap_NameOfUnaryOp(int i);
+Atom Yap_NameOfBinaryOp(int i);
 
 
 #define RINT(v)       return(MkIntegerTerm(v))
@@ -369,6 +565,10 @@ add_int(Int i, Int j USES_REGS)
     RINT(i+j);
 #endif
 }
+
+/* calculate the most significant bit for an integer */
+Int
+Yap_msb(Int inp USES_REGS);
 
 static inline Term
 p_plus(Term t1, Term t2 USES_REGS) {

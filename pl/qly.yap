@@ -15,16 +15,91 @@
 * comments:	fast save/restore					 *
 *									 *
 *************************************************************************/
+:- system_module( '$_qly', [qload_module/1,
+        qsave_file/1,
+        qsave_module/1,
+        qsave_program/1,
+        qsave_program/2,
+        restore/1,
+        save_program/1,
+        save_program/2], ['$init_state'/0]).
 
+:- use_system_module( '$_absf', ['$system_library_directories'/2]).
+
+:- use_system_module( '$_boot', ['$system_catch'/4]).
+
+:- use_system_module( '$_consult', ['$do_startup_reconsult'/1]).
+
+:- use_system_module( '$_control', ['$run_atom_goal'/1]).
+
+:- use_system_module( '$_errors', ['$do_error'/2]).
+
+:- use_system_module( '$_preds', ['$init_preds'/0]).
+
+:- use_system_module( '$_protect', ['$protect'/0]).
+
+:- use_system_module( '$_threads', ['$reinit_thread0'/0]).
+
+:- use_system_module( '$_yio', ['$extend_file_search_path'/1]).
+
+/**
+
+@defgroup YAPSaving Saving and Loading Prolog States
+@ingroup YAPLoading
+
+YAP can save and read images of its current state to files, known as
+saved states. It is possible to save the entire state or just a module
+or a file. Notice that saved states in YAP depend on the architecture
+where they were made, and may also depend on the version of YAP being
+saved.
+
+YAP always tries to find saved states from the current directory
+first. If it cannot it will use the environment variable [YAPLIBDIR](@ref YAPLIBDIR), if
+defined, or search the default library directory.
+*/
+
+/** @pred save_program(+ _F_)
+Saves the current state of the data-base in file _F_ .
+
+The result is a resource archive containing a saved state that
+expresses all Prolog data from the running program and all
+user-defined resources. Depending on the stand_alone option, the
+resource is headed by the emulator, a Unix shell script or nothing.
+
+**/
 save_program(File) :-
 	qsave_program(File).
 
+/** @pred save_program(+ _F_, : _G_)
+
+Saves an image of the current state of the YAP database in file
+ _F_, and guarantee that execution of the restored code will start by
+trying goal  _G_.
+**/
 qsave_program(File) :-
 	'$save_program_status'([], qsave_program(File)),
 	open(File, write, S, [type(binary)]),
 	'$qsave_program'(S),
 	close(S).	
 
+/** @pred qsave_program(+ _F_, Opts)
+
+Saves an image of the current state of the YAP database in file
+ _F_, currently the options in _Opts_ are ignored:
+
+   + stack(+ _KBytes_)
+     Limit for the local and global stack.
+
+   + trail(+ _KBytes_)
+     Limit for the trail stack.
+
+   + goal(: _Callable_)
+     Initialization goal for the new executable (see -g).
+
+   + init_file(+ _Atom_)
+     Default initialization file for the new executable. See -f.
+
+**/
 qsave_program(File, Opts) :-
 	'$save_program_status'(Opts, qsave_program(File,Opts)),
 	open(File, write, S, [type(binary)]),
@@ -32,7 +107,13 @@ qsave_program(File, Opts) :-
 	% make sure we're not going to bootstrap from this file.
 	close(S).	
 
-save_program(File, Goal) :-
+/** @pred save_program(+ _F_, : _G_)
+
+Saves an image of the current state of the YAP database in file
+ _F_, and guarantee that execution of the restored code will start by
+trying goal  _G_.
+**/
+save_program(_File, Goal) :-
 	recorda('$restore_goal', Goal ,_R),	
 	fail.
 save_program(File, _Goal) :-
@@ -105,14 +186,16 @@ save_program(File, _Goal) :-
       strip_module(M:B, M1, G1),
       recordz('$restore_flag',goal(M1:G1),_)
     ;
-      '$do_error'(type_error(callable,B),G)
+       strip_module(M:B, M1, G1),
+     '$do_error'(type_error(callable,G1),G)
     ).
 '$cvt_qsave_flag'(toplevel(B), G, M) :- !,
     ( callable(B) -> 
       strip_module(M:B, M1, G1),
       recordz('$restore_flag',toplevel(M1:G1),_)
     ;
-      '$do_error'(type_error(callable,B),G)
+       strip_module(M:B, M1, G1),
+     '$do_error'(type_error(callable,G1),G)
     ).
 '$cvt_qsave_flag'(init_file(B), G, M) :- !,
     ( atom(B) -> 
@@ -129,14 +212,19 @@ save_program(File, _Goal) :-
     '$do_error'(domain_error(qsave_program,Opt), G).
 
 % there is some ordering between flags.
-'$x_yap_flag'(goal, Goal).
-'$x_yap_flag'(language, V).
+'$x_yap_flag'(goal, _Goal).
+'$x_yap_flag'(language, _V).
 '$x_yap_flag'(M:unknown, V) :-
 	current_module(M),
 	yap_flag(M:unknown, V).
 '$x_yap_flag'(X, V) :-
 	yap_flag(X, V),
+	X \= gc_margin, % different machines will have different needs,
+	X \= argv,
+	X \= os_argv,
 	X \= language,
+	X \= max_threads,
+	X \= max_workers,
 	X \= readline,
 	X \= timezone,
 	X \= tty_control,
@@ -190,7 +278,7 @@ save_program(File, _Goal) :-
 	load_files(library(win_menu), [silent(true)]),
 	fail.
 '$init_from_saved_state_and_args' :-
-	recorded('$reload_foreign_libraries',G,R),
+	recorded('$reload_foreign_libraries',_G,R),
 	erase(R),
 	shlib:reload_foreign_libraries,
 	fail.
@@ -215,7 +303,6 @@ save_program(File, _Goal) :-
 '$init_from_saved_state_and_args' :-
 	recorded('$restore_flag', unknown(M:B), R),
 	erase(R),
-writeln(M:B),
 	yap_flag(M:unknown,B),
 	fail.
 '$init_from_saved_state_and_args' :-
@@ -238,8 +325,15 @@ writeln(M:B),
 	retractall(user:library_directory(_)),
 	% make sure library_directory is open.
 	\+ clause(user:library_directory(_),_),
-	'$system_library_directories'(D),
+	'$system_library_directories'(library,D),
 	assert(user:library_directory(D)),
+	fail.
+'$init_path_extensions' :-
+	retractall(user:library_directory(_)),
+	% make sure library_directory is open.
+	\+ clause(user:library_directory(_),_),
+	'$system_library_directories'(commons,D),
+	assert(user:commons_directory(D)),
 	fail.
 '$init_path_extensions'.
  
@@ -296,70 +390,189 @@ writeln(M:B),
 	 call(db_import(myddas,Table,Table)),
 	 fail.
  '$myddas_import_all'.
-	 
 
-qsave_file(File) :-
-	recorded('$module', '$module'(F,Mod,Exps,Line), _),
+qsave_file(F0) :-
+    ensure_loaded(  F0 ),
+    absolute_file_name( F0, File, [expand(true),file_type(prolog),access(read),file_errors(fail),solutions(first)]),
+    absolute_file_name( F0, State, [expand(true),file_type(qly)]),
+    '$qsave_file_'(File, State). 
+
+/** @pred qsave_file(+ _File_, +_State_)
+
+Saves an image of all the information compiled by the system from file _F_ to _State_. 
+This includes modules and predicates eventually including multi-predicates.
+**/
+qsave_file(F0, State) :-
+    ensure_loaded(  F0 ),
+    absolute_file_name( F0, File, [expand(true),file_type(prolog),access(read),file_errors(fail),solutions(first)]),
+    '$qsave_file_'(File, State).  
+
+'$qsave_file_'(File, UserF, _State) :- 
+    ( File == user_input -> Age = 0 ; time_file64(File, Age) ),
+    '$current_module'(M),
+    assert(user:'$file_property'( '$lf_loaded'( UserF, Age, M) ) ),
+    '$set_owner_file'( '$file_property'( _ ), user, File ),
+    fail.
+'$qsave_file_'(File, UserF, _State) :- 
+    recorded('$lf_loaded','$lf_loaded'( File, M, Reconsult, UserFile, OldF, Line, Opts), _),
+    assert(user:'$file_property'( '$lf_loaded'( UserF, M, Reconsult, UserFile, OldF, Line, Opts) ) ),
+    '$set_owner_file'( '$file_property'( _ ), user, File ),
+    fail.
+'$qsave_file_'(File, _UserF, _State) :-  
+    recorded('$directive',directive( File, M:G, Mode,  VL, Pos ), _),
+    assert(user:'$file_property'( directive( M:G, Mode,  VL, Pos ) ) ),
+    '$set_owner_file'('$file_property'( _ ), user, File ),
+    fail.
+'$qsave_file_'(File, _UserF, _State) :-
+    '$fetch_multi_files_file'(File, MultiFiles),
+    assert(user:'$file_property'( multifile(MultiFiles  ) ) ),
+    '$set_owner_file'('$file_property'( _ ), user, File ),
+    fail.
+'$qsave_file_'( File, _UserF, State ) :-
+    (
+	is_stream( State )
+    ->
+	'$qsave_file_preds'(State, File)
+	;
+	open(State, write, S, [type(binary)]),
+        '$qsave_file_preds'(S, File),
+        close(S)
+    ), 
+    abolish(user:'$file_property'/1).
+
+'$fetch_multi_files_file'(File, Multi_Files) :-
+	setof(Info, '$fetch_multi_file_module'(File, Info), Multi_Files).
+
+'$fetch_multi_file_file'(FileName, (M:G :- Body)) :-
+	recorded('$multifile_defs','$defined'(FileName,Name,Arity,M), _),
+	functor(G, Name, Arity ), 
+        clause(M:G, Body, ClauseRef),
+	clause_property(ClauseRef, file(FileName) ).
+
+
+/** @pred qsave_module(+ _Module_, +_State_)
+Saves an image of all the information compiled by the systemm on module _F_ to _State_. 
+**/
+
+qsave_module(Mod, OF) :- 
+	recorded('$module', '$module'(_F,Mod,Source,Exps,L), _),
 	'$fetch_parents_module'(Mod, Parents),
 	'$fetch_imports_module'(Mod, Imps),
 	'$fetch_multi_files_module'(Mod, MFs),
 	'$fetch_meta_predicates_module'(Mod, Metas),
 	'$fetch_module_transparents_module'(Mod, ModTransps),
-	asserta(Mod:'@mod_info'(F, Exps, Line, Parents, Imps, Metas, ModTransps)),
-	atom_concat(Mod,'.qly',OF),
+	'$fetch_term_expansions_module'(Mod, TEs),
+	'$fetch_foreigns_module'(Mod, Foreigns),
+	asserta(Mod:'@mod_info'(Source, Exps, MFs, L, Parents, Imps, Metas, ModTransps, Foreigns, TEs)),
 	open(OF, write, S, [type(binary)]),
 	'$qsave_module_preds'(S, Mod),
 	close(S),
-	abolish(Mod:'@mod_info'/7),
+	abolish(Mod:'@mod_info'/10),
 	fail.
-qsave_file(_).
+qsave_module(_, _).
+
+/** @pred qsave_module(+ _Module_)
+
+Saves an image of all the information compiled by the systemm on
+module _F_ to a file _State.qly_ in the current directory.
+
+**/
 
 qsave_module(Mod) :-
-	recorded('$module', '$module'(F,Mod,Exps,L), _),
-	'$fetch_parents_module'(Mod, Parents),
-	'$fetch_imports_module'(Mod, Imps),
-	'$fetch_multi_files_module'(Mod, MFs),
-	'$fetch_meta_predicates_module'(Mod, Metas),
-	'$fetch_module_transparents_module'(Mod, ModTransps),
-	asserta(Mod:'@mod_info'(F, Exps, L, Parents, Imps, Metas, ModTransps)),
 	atom_concat(Mod,'.qly',OF),
-	open(OF, write, S, [type(binary)]),
-	'$qsave_module_preds'(S, Mod),
-	close(S),
-	abolish(Mod:'@mod_info'/7),
-	fail.
-qsave_module(_).
+	qsave_module(Mod, OF).
 
+/**
+@pred restore(+ _F_)
+Restores a previously saved state of YAP from file  _F_.
+
+*/
 restore(File) :-
 	open(File, read, S, [type(binary)]),
 	'$qload_program'(S),
 	close(S).
 
-qload_module(Mod) :-
-	atom_concat(Mod,'.qly',IF),
-	open(IF, read, S, [type(binary)]),
-	'$qload_module_preds'(S),
-	close(S),
-	fail.
-qload_module(Mod) :-
-	'$complete_read'(Mod).
+/**
+@pred qload_module(+ _M_)
 
-'$complete_read'(Mod) :-
-	retract(Mod:'@mod_info'(F, Exps, Line,Parents, Imps, Metas, ModTransps)),
-	abolish(Mod:'$mod_info'/7),
-	recorda('$module', '$module'(F,Mod,Exps,Line), _),
-	'$install_parents_module'(Mod, Parents),
-	'$install_imports_module'(Mod, Imps),
-	'$install_multi_files_module'(Mod, MFs),
-	'$install_meta_predicates_module'(Mod, Metas),
-	'$install_module_transparents_module'(Mod, ModTransps).
-	
+Restores a previously save image of module  _M_. This built-in searches
+for a file M.qly or M according to the rules for qly files.
+
+The q_load_module/1 built-in tries to reload any modules it imports
+from and any foreign files that had been loaded with the original
+module. It tries first reloading from qly images, but if they are not
+available it tries reconsulting the source file.
+
+*/
+qload_module(Mod) :-
+    ( '$swi_current_prolog_flag'(verbose_load, false)
+      ->
+	Verbosity = silent
+	;
+	Verbosity = informational
+    ),
+    StartMsg = loading_module,
+    EndMsg = module_loaded,
+    '$current_module'(SourceModule, Mod),
+    H0 is heapused, '$cputime'(T0,_),
+    absolute_file_name( Mod, File, [expand(true),file_type(qly)]),
+    print_message(Verbosity, loading(StartMsg, File)),
+    file_directory_name( File, Dir),
+    working_directory(OldD, Dir),
+    '$qload_module'(Mod, File, SourceModule ),
+    H is heapused-H0, '$cputime'(TF,_), T is TF-T0,
+    print_message(Verbosity, loaded(EndMsg, File, Mod, T, H)),
+    '$current_module'(_, SourceModule),
+    working_directory(_, OldD).
+
+'$qload_module'(Mod, S, SourceModule) :-
+    is_stream( S ), !,
+    '$q_header'( S, Type ),
+    stream_property( S, file_name( File )),
+    ( Type == module ->
+	  '$qload_module'(S , Mod, File, SourceModule)
+    ;
+      Type == file ->
+	  '$qload_file'(S, File)	  
+    ).
+'$qload_module'(Mod, File, SourceModule) :-
+    open(File, read, S, [type(binary)]),
+    '$q_header'( S, Type ),
+    ( Type == module ->
+	  '$qload_module'(S , Mod, File, SourceModule)
+    ;
+      Type == file ->
+	  '$qload_file'(S, File)	  
+    ),
+    close(S).
+
+'$qload_module'(_S, Mod, _File, _SourceModule) :-
+    unload_module( Mod ), fail.
+'$qload_module'(S, _Mod, _File, _SourceModule) :-
+    '$qload_module_preds'(S), fail.
+'$qload_module'(_S, Mod, File, SourceModule) :-
+    Mod:'@mod_info'(F, Exps, MFs, Line,Parents, Imps, Metas, ModTransps, Foreigns, TEs),
+    abolish(Mod:'@mod_info'/10),
+    recorda('$module', '$module'(File, Mod, F, Exps, Line), _),
+    '$install_parents_module'(Mod, Parents),
+    '$install_imports_module'(Mod, Imps, []),
+    '$install_multi_files_module'(Mod, MFs),
+    '$install_meta_predicates_module'(Mod, Metas),
+    '$install_foreigns_module'(Mod, Foreigns),
+    '$install_module_transparents_module'(Mod, ModTransps),
+    '$install_term_expansions_module'(Mod, TEs),
+    % last, export everything to the host: if the loading crashed you didn't actually do
+    % no evil.
+    '$convert_for_export'(all, Exps, Mod, SourceModule, TranslationTab, _AllExports0, qload_module),
+    '$add_to_imports'(TranslationTab, Mod, SourceModule). % insert ops, at least for now
+
 '$fetch_imports_module'(Mod, Imports) :-
 	findall(Info, '$fetch_import_module'(Mod, Info), Imports).
 
-% detect an importerator that is local to the module.
-'$fetch_import_module'(Mod, '$import'(Mod0,Mod,G0,G,N,K)) :-
-	recorded('$import', '$import'(Mod0,Mod,G0,G,N,K), _).
+% detect an import that is local to the module.
+'$fetch_import_module'(Mod, '$import'(Mod0,Mod,G0,G,N,K) - S) :-
+	recorded('$import', '$import'(Mod0,Mod,G0,G,N,K), _),
+	( recorded('$module','$module'(_, Mod0, S, _, _), _) -> true ; S = user_input ).
 
 '$fetch_parents_module'(Mod, Parents) :-
 	findall(Parent, prolog:'$parent_module'(Mod,Parent), Parents).
@@ -374,55 +587,201 @@ qload_module(Mod) :-
 '$fetch_meta_predicates_module'(Mod, Meta_Predicates) :-
 	findall(Info, '$fetch_meta_predicate_module'(Mod, Info), Meta_Predicates).
 
-% detect an meta_predicateerator that is local to the module.
+% detect a meta_predicate that is local to the module.
 '$fetch_meta_predicate_module'(Mod, '$meta_predicate'(F,Mod,N,P)) :-
-	prolog:'$meta_predicate'(F,Mod0,N,P), Mod0 == Mod.
+	prolog:'$meta_predicate'(F,M,N,P), M==Mod.
 
 '$fetch_multi_files_module'(Mod, Multi_Files) :-
 	findall(Info, '$fetch_multi_file_module'(Mod, Info), Multi_Files).
 
-% detect an multi_fileerator that is local to the module.
+% detect an multi_file that is local to the module.
 '$fetch_multi_file_module'(Mod, '$defined'(FileName,Name,Arity,Mod)) :-
 	recorded('$multifile_defs','$defined'(FileName,Name,Arity,Mod), _).
+'$fetch_multi_file_module'(Mod, '$mf_clause'(FileName,_Name,_Arity,Mod,Clause), _) :-
+    recorded('$mf','$mf_clause'(FileName,_Name,_Arity,Mod,ClauseRef), _),
+    instance(ClauseRef, Clause ).
 
-'$fetch_term_expansions_module'(Mod, Term_Expansions) :-
-	findall(Info, '$fetch_term_expansion_module'(Mod, Info), Term_Expansions).
+'$fetch_term_expansions_module'(Mod, TEs) :-
+	findall(Info, '$fetch_term_expansion_module'(Mod, Info), TEs).
 
 % detect an term_expansionerator that is local to the module.
-'$fetch_term_expansion_module'(Mod,'$defined'(FileName,Name,Arity,Mod)) :-
-	recorded('$multifile_defs','$defined'(FileName,Name,Arity,Mod), _).
+'$fetch_term_expansion_module'(Mod, ( user:term_expansion(G, GI) :- Bd )) :-
+	clause( user:term_expansion(G, GI), Bd, _),
+	strip_module(G, Mod, _).
+% detect an term_expansionerator that is local to the module.
+'$fetch_term_expansion_module'(Mod, ( system:term_expansion(G, GI) :- Bd )) :-
+	clause( system:term_expansion(G, GI), Bd, _),
+	strip_module(G, Mod, _).
+% detect an term_expansionerator that is local to the module.
+'$fetch_term_expansion_module'(Mod, ( user:goal_expansion(G, CurMod, GI) :- Bd )) :-
+	clause( user:goal_expansion(G, CurMod, GI), Bd, _),
+	Mod == CurMod.
+% detect an term_expansionerator that is local to the module.
+'$fetch_term_expansion_module'(Mod, ( user:goal_expansion(G, GI) :- Bd )) :-
+	clause( user:goal_expansion(G, GI), Bd, _),
+	strip_module(G, Mod, _).
+% detect an term_expansionerator that is local to the module.
+'$fetch_term_expansion_module'(Mod, ( system:goal_expansion(G, GI) :- Bd )) :-
+	clause( system:goal_expansion(G, GI), Bd, _),
+	strip_module(G, Mod, _).
 
+'$fetch_foreigns_module'(Mod, Foreigns) :-
+	findall(Info, '$fetch_foreign_module'(Mod, Info), Foreigns).
 
+% detect an term_expansionerator that is local to the module.
+'$fetch_foreign_module'(Mod,Foreign) :-
+	recorded( '$foreign', Mod:Foreign, _).
 
-'$install_ops_module'(_, []).
-'$install_ops_module'(Mod, op(X,Y,Op).Ops) :-
-	op(X, Y, Mod:Op),
-	'$install_ops_module'(Mod, Ops).
+'$install_term_expansions_module'(_, []).
+'$install_term_expansions_module'(Mod, [TE|TEs]) :-
+    assert(TE),
+    '$install_term_expansions_module'(Mod, TEs).
 
-'$install_imports_module'(_, []).
-'$install_imports_module'(Mod, Import.Imports) :-
+'$install_imports_module'(_, [], Fs0) :-
+    sort(Fs0, Fs),
+    '$restore_load_files'(Fs).
+'$install_imports_module'(Mod, [Import-F|Imports], Fs0) :-
 	recordz('$import', Import, _),
-	'$install_imports_module'(Mod, Imports).
+	arg(1, Import, M),
+	'$install_imports_module'(Mod, Imports, [M-F|Fs0]).
+
+'$restore_load_files'([]).
+'$restore_load_files'([M-F0|Fs]) :-
+    (
+	absolute_file_name( M,_File, [expand(true),file_type(qly),access(read),file_errors(fail)])
+    ->
+        qload_module(M)
+    ;
+	use_module(M, F0, _)
+    ),
+    '$restore_load_files'(Fs).
 
 '$install_parents_module'(_, []).
-'$install_parents_module'(Mod, Parent.Parents) :-
+'$install_parents_module'(Mod, [Parent|Parents]) :-
 	assert(prolog:Parent),
 	'$install_parents_module'(Mod, Parents).
 
 '$install_module_transparents_module'(_, []).
-'$install_module_transparents_module'(Mod, Module_Transparent.Module_Transparents) :-
+'$install_module_transparents_module'(Mod, [Module_Transparent|Module_Transparents]) :-
 	assert(prolog:Module_Transparent),
 	'$install_module_transparents_module'(Mod, Module_Transparents).
 
 '$install_meta_predicates_module'(_, []).
-'$install_meta_predicates_module'(Mod, Meta_Predicate.Meta_Predicates) :-
+'$install_meta_predicates_module'(Mod, [Meta_Predicate|Meta_Predicates]) :-
 	assert(prolog:Meta_Predicate),
 	'$install_meta_predicates_module'(Mod, Meta_Predicates).
 
 '$install_multi_files_module'(_, []).
-'$install_multi_files_module'(Mod, Multi_File.Multi_Files) :-
-	recordz('$multifile_defs',Multi_File, _).
+'$install_multi_files_module'(Mod, [Multi_File|Multi_Files]) :-
+	recordz('$multifile_defs',Multi_File, _),
 	'$install_multi_files_module'(Mod, Multi_Files).
 
+'$install_foreigns_module'(_, []).
+'$install_foreigns_module'(Mod, [Foreign|Foreigns]) :-
+	'$do_foreign'(Foreign, Foreigns),
+	'$install_foreigns_module'(Mod, Foreigns).
+
+'$do_foreign'('$foreign'(Objs,Libs,Entry), _) :-
+    load_foreign_files(Objs,Libs,Entry).
+'$do_foreign'('$swi_foreign'(File, Opts, Handle), More) :-
+    open_shared_object(File, Opts, Handle, NewHandle),
+    '$init_foreigns'(More, NewHandle).
+'$do_foreign'('$swi_foreign'(_,_), _More).
+
+'$init_foreigns'([], _Handle, _NewHandle).
+'$init_foreigns'(['$swi_foreign'( Handle, Function )|More], Handle, NewHandle) :- 
+    !,
+    call_shared_object_function( NewHandle, Function),
+    '$init_foreigns'(More, Handle, NewHandle).
+'$init_foreigns'([_|More], Handle, NewHandle) :-
+    '$init_foreigns'(More, Handle, NewHandle).
+
+/**
+@pred qload_file(+ _F_)
+
+Restores a previously saved state of YAP contaianing a qly file  _F_.
+
+*/
+qload_file( F0 ) :-
+    ( '$swi_current_prolog_flag'(verbose_load, false)
+      ->
+	Verbosity = silent
+	;
+	Verbosity = informational
+    ),
+    StartMsg = loading_module,
+    EndMsg = module_loaded,
+    '$current_module'( SourceModule ),
+    H0 is heapused, 
+    '$cputime'(T0,_),
+    ( is_stream( F0 ) 
+      ->
+      stream_property(F0, file_name(File) ),
+      File = FilePl,
+      S = File
+    ;
+      absolute_file_name( F0, File, [expand(true),file_type(qly)]),
+      absolute_file_name( F0, FilePl, [expand(true),file_type(prolog)]),
+      unload_file( FilePl ),
+      open(File, read, S, [type(binary)])
+    ),
+    print_message(Verbosity, loading(StartMsg, File)),
+    file_directory_name(File, DirName),
+    working_directory(OldD, DirName),
+    '$q_header'( S, Type ),
+    ( Type == module ->
+	  '$qload_module'(S , Mod, File, SourceModule)
+    ;
+      Type == file ->
+	'$lf_option'(last_opt, LastOpt),
+	functor( TOpts, opt, LastOpt ),
+	'$lf_default_opts'(1, LastOpt, TOpts),
+	  '$qload_file'(S, SourceModule, File, FilePl, F0, all, TOpts)	  
+    ),
+    close(S),
+    working_directory( _, OldD),
+    H is heapused-H0, '$cputime'(TF,_), T is TF-T0,
+    '$current_module'(Mod, Mod ),
+    print_message(Verbosity, loaded(EndMsg, File, Mod, T, H)),
+    '$exec_initialisation_goals'.
+
+'$qload_file'(_S, SourceModule, _F, FilePl, _F0, _ImportList, _TOpts) :-
+    recorded('$lf_loaded','$lf_loaded'( FilePl, _Age, SourceModule), _),
+   !.
+'$qload_file'(_S, SourceModule, _F, FilePl, _F0, _ImportList, _TOpts) :-
+    ( FilePl == user_input -> Age = 0 ; time_file64(FilePl, Age) ),
+    recorda('$lf_loaded','$lf_loaded'( FilePl, Age, SourceModule), _),
+    fail.
+'$qload_file'(S, _SourceModule, _File, _FilePl, _F0, _ImportList, _TOpts) :-
+    '$qload_file_preds'(S),
+    fail.
+'$qload_file'(_S, SourceModule, F, _FilePl, _F0, _ImportList, _TOpts) :-
+    user:'$file_property'( '$lf_loaded'( F, Age, _ ) ),
+    recordaifnot('$lf_loaded','$lf_loaded'( F, Age, SourceModule), _),
+    fail.
+'$qload_file'(_S, _SourceModule, _File, FilePl, F0, _ImportList, _TOpts) :-
+    b_setval('$source_file', F0 ),
+    '$process_directives'( FilePl ),
+    fail.
+'$qload_file'(_S, SourceModule, _File,  FilePl, _F0, ImportList, TOpts) :-
+    '$import_to_current_module'(FilePl, SourceModule, ImportList, _, TOpts).
+
+'$process_directives'( FilePl ) :-
+    user:'$file_property'( '$lf_loaded'( FilePl, M, Reconsult, UserFile, OldF, Line, Opts) ),
+    recorda('$lf_loaded','$lf_loaded'( FilePl, M, Reconsult, UserFile, OldF, Line, Opts), _),
+    fail.
+'$process_directives'( _FilePl ) :-
+    user:'$file_property'( multifile( List ) ),
+    lists:member( Clause, List ),
+    assert( Clause ),
+    fail.
+'$process_directives'( FilePl ) :-
+    user:'$file_property'( directive( MG, _Mode,  VL, Pos  ) ),
+    '$set_source'( FilePl, Pos ),
+    strip_module(MG, M, G),
+    '$process_directive'(G, reconsult, M, VL, Pos),
+    fail.
+'$process_directives'( _FilePl ) :-
+    abolish(user:'$file_property'/1).
 
 

@@ -20,18 +20,18 @@ Int	     Yap_absmi(int);
 int	     Yap_absmiEND(void);
 
 /* adtdefs.c */
-Term	Yap_ArrayToList(Term *,int);
+Term	Yap_ArrayToList(Term *,size_t);
 int	Yap_GetName(char *,UInt,Term);
 Term	Yap_GetValue(Atom);
 int     Yap_HasOp(Atom);
 struct operator_entry *Yap_GetOpPropForAModuleHavingALock(AtomEntry *, Term);
-Atom	Yap_LookupAtom(char *);
-Atom	Yap_LookupAtomWithLength(char *, size_t);
-Atom	Yap_LookupUTF8Atom(char *);
-Atom	Yap_LookupMaybeWideAtom(wchar_t *);
-Atom	Yap_LookupMaybeWideAtomWithLength(wchar_t *, size_t);
-Atom	Yap_FullLookupAtom(char *);
-void	Yap_LookupAtomWithAddress(char *,AtomEntry *);
+Atom	Yap_LookupAtom(const char *);
+Atom	Yap_LookupAtomWithLength(const char *, size_t);
+Atom	Yap_LookupUTF8Atom(const char *);
+Atom	Yap_LookupMaybeWideAtom(const wchar_t *);
+Atom	Yap_LookupMaybeWideAtomWithLength(const wchar_t *, size_t);
+Atom	Yap_FullLookupAtom(const char *);
+void	Yap_LookupAtomWithAddress(const char *,AtomEntry *);
 Prop	Yap_NewPredPropByFunctor(struct FunctorEntryStruct *, Term);
 Prop	Yap_NewPredPropByAtom(struct AtomEntryStruct *, Term);
 Prop	Yap_PredPropByFunctorNonThreadLocal(struct FunctorEntryStruct *, Term);
@@ -110,18 +110,23 @@ CELL  *Yap_HeapStoreOpaqueTerm(Term t);
 size_t Yap_OpaqueTermToString(Term t, char *str, size_t max);
 
 /* c_interface.c */
+#ifndef YAP_CPP_INTERFACE
 Int    YAP_Execute(struct pred_entry *, CPredicate);
 Int    YAP_ExecuteFirst(struct pred_entry *, CPredicate);
 Int    YAP_ExecuteNext(struct pred_entry *, CPredicate);
 Int    YAP_ExecuteOnCut(struct pred_entry *, CPredicate, struct cut_c_str *);
 Int    YAP_RunGoalOnce(Term);
+#endif
 
 /* cdmgr.c */
 Term	Yap_all_calls(void);
 Atom  Yap_ConsultingFile( USES_REGS1 );
 struct pred_entry *Yap_PredForChoicePt(choiceptr);
 void	Yap_InitCdMgr(void);
-void	Yap_init_consult(int, char *);
+struct pred_entry * Yap_PredFromClause( Term t USES_REGS );
+int	Yap_discontiguous(struct pred_entry  *ap USES_REGS );
+int	Yap_multiple(struct pred_entry  *ap USES_REGS );
+void	Yap_init_consult(int, const char *);
 void	Yap_end_consult(void);
 void	Yap_Abolish(struct pred_entry *);
 void	Yap_BuildMegaClause(struct pred_entry *);
@@ -156,6 +161,10 @@ void	Yap_InitBackDB(void);
 void	Yap_InitDBPreds(void);
 
 /* errors.c */
+#if DEBUG
+void
+Yap_PrintPredName( struct pred_entry  *ap );
+#endif
 void	Yap_RestartYap(int);
 void	Yap_exit(int);
 yamop  *Yap_Error(yap_error_number,Term,char *msg, ...);
@@ -167,18 +176,20 @@ int     Yap_SWIHandleError( const char *, ... );
 void	Yap_InitEval(void);
 
 /* exec.c */
+void    Yap_fail_all( choiceptr bb USES_REGS);
 Term	Yap_ExecuteCallMetaCall(Term);
 void	Yap_InitExecFs(void);
 Int	Yap_JumpToEnv(Term);
 Term	Yap_RunTopGoal(Term);
 void	Yap_ResetExceptionTerm(int);
 Int	Yap_execute_goal(Term, int, Term);
-Int	Yap_exec_absmi(int);
+Int	Yap_exec_absmi( bool, yap_reset_t );
 void	Yap_trust_last(void);
 Term	Yap_GetException(void);
 void	Yap_PrepGoal(UInt, CELL *, choiceptr USES_REGS);
+int     Yap_execute_pred(struct pred_entry  *ppe, CELL *pt USES_REGS);
 int     Yap_dogc( int extra_args, Term *tp USES_REGS );
-
+Term    Yap_PredicateIndicator(Term t, Term mod);
 /* exo.c */
 void	Yap_InitExoPreds(void);
 void    Yap_udi_Interval_init(void);
@@ -209,10 +220,14 @@ void	Yap_AllocateDefaultArena(Int, Int, int);
 Int     Yap_total_stack_shift_time(void);
 void    Yap_InitGrowPreds(void);
 UInt    Yap_InsertInGlobal(CELL *, UInt);
-int     Yap_growheap(int, size_t, void *);
+int     Yap_growheap(bool, size_t, void *);
 int     Yap_growstack( size_t );
-int     Yap_growtrail(long, int);
+int     Yap_growtrail(size_t, bool);
 int     Yap_growglobal(CELL **);
+int     Yap_locked_growheap(bool, size_t, void *);
+int     Yap_locked_growstack( size_t );
+int     Yap_locked_growtrail(size_t, bool);
+int     Yap_locked_growglobal(CELL **);
 CELL  **Yap_shift_visit(CELL **, CELL ***, CELL ***);
 #ifdef THREADS
 void   Yap_CopyThreadStacks(int, int, int);
@@ -223,7 +238,9 @@ Int  Yap_total_gc_time(void);
 void Yap_init_gc(void);
 int  Yap_is_gc_verbose(void);
 int  Yap_gc(Int, CELL *, yamop *);
+int  Yap_locked_gc(Int, CELL *, yamop *);
 int  Yap_gcl(UInt, Int, CELL *, yamop *);
+int  Yap_locked_gcl(UInt, Int, CELL *, yamop *);
 
 /* init.c */
 #ifdef DEBUG
@@ -233,12 +250,12 @@ void	Yap_DebugEndline(void);
 int	Yap_DebugGetc(void);
 #endif
 int	Yap_IsOpType(char *);
-void	Yap_InitCPred(char *, unsigned long int, CPredicate, UInt);
-void	Yap_InitAsmPred(char *, unsigned long int, int, CPredicate, UInt);
-void	Yap_InitCmpPred(char *, unsigned long int, CmpPredicate, UInt);
-void	Yap_InitCPredBack(char *, unsigned long int, unsigned int, CPredicate,CPredicate,UInt);
-void	Yap_InitCPredBackCut(char *, unsigned long int, unsigned int, CPredicate,CPredicate,CPredicate,UInt);
-void    Yap_InitCPredBack_(char *, unsigned long int, unsigned int, CPredicate,CPredicate,CPredicate,UInt);
+void	Yap_InitCPred(const char *, UInt, CPredicate, UInt);
+void	Yap_InitAsmPred(const char *, UInt, int, CPredicate, UInt);
+void	Yap_InitCmpPred(const char *, UInt, CmpPredicate, UInt);
+void	Yap_InitCPredBack(const char *, UInt, unsigned int, CPredicate,CPredicate,UInt);
+void	Yap_InitCPredBackCut(const char *, UInt, unsigned int, CPredicate,CPredicate,CPredicate,UInt);
+void    Yap_InitCPredBack_(const char *, UInt, unsigned int, CPredicate,CPredicate,CPredicate,UInt);
 void	Yap_InitWorkspace(UInt,UInt,UInt,UInt,UInt,int,int,int);
 
 #ifdef YAPOR
@@ -267,6 +284,7 @@ void   *Yap_GetOutputStream(Atom at);
 #ifdef DEBUG
 extern void Yap_DebugPlWrite (Term t);
 extern void Yap_DebugErrorPutc (int n);
+extern void Yap_DebugErrorPuts (const char *s);
 #endif
 void    Yap_PlWriteToStream(Term, int, int);
 /* depth_lim.c */
@@ -332,9 +350,8 @@ void	Yap_InitSavePreds(void);
 /* scanner.c */
 
 /* signals.c */
-void	Yap_signal(yap_signals);
-void	Yap_undo_signal(yap_signals);
 void	Yap_InitSignalCPreds(void);
+void   *Yap_InitSignals(int wid);
 
 /* sort.c */
 void    Yap_InitSortPreds(void);
@@ -348,17 +365,16 @@ int	Yap_IsOpMaxPrio(Atom);
 
 /* sysbits.c */
 void    Yap_InitPageSize(void);
-void	Yap_set_fpu_exceptions(int);
+bool	Yap_set_fpu_exceptions(bool);
 UInt	Yap_cputime(void);
 Int	Yap_walltime(void);
 int	Yap_dir_separator(int);
 int	Yap_volume_header(char *);
-void	Yap_InitSysPath(void);
 int	Yap_signal_index(const char *);
 #ifdef MAC
 void	Yap_SetTextFile(char *);
 #endif
-int     Yap_getcwd(const char *, int);
+char   *Yap_getcwd(const char *, size_t);
 void    Yap_cputime_interval(Int *,Int *);
 void    Yap_systime_interval(Int *,Int *);
 void    Yap_walltime_interval(Int *,Int *);
@@ -375,6 +391,8 @@ void	Yap_WinError(char *);
 /* threads.c */
 void   Yap_InitThreadPreds(void);
 void   Yap_InitFirstWorkerThreadHandle(void);
+int	   Yap_ThreadID( void );
+int    Yap_NOfThreads( void );
 #if THREADS
 int    Yap_InitThread(int);
 #endif
@@ -415,6 +433,7 @@ int	Yap_IsAcyclicTerm(Term);
 void	Yap_InitUtilCPreds(void);
 Int     Yap_TermHash(Term, Int, Int, int);
 Int     Yap_NumberVars(Term, Int, int);
+Term    Yap_TermVariables( Term t, UInt arity USES_REGS );
 Term    Yap_UnNumberTerm(Term, int);
 Int     Yap_SkipList(Term *, Term **);
 /* yap.c */
@@ -423,12 +442,14 @@ Int     Yap_SkipList(Term *, Term **);
 /* write.c */
 void	Yap_plwrite(Term, void *, int, int, int);
 int     Yap_FormatFloat( Float f, const char *s, size_t sz );
+void    Yap_WriteAtom(struct io_stream *s, Atom atom);
 
 /* yap2swi.c */
 void	Yap_swi_install(void);
 void    Yap_InitSWIHash(void);
 int     Yap_get_stream_handle(Term, int, int, void *);
 Term    Yap_get_stream_position(void *);
+AtomEntry *Yap_lookupBlob(void *blob, size_t len, void *type, int *newp);
 
 /* opt.preds.c */
 void    Yap_init_optyap_preds(void);

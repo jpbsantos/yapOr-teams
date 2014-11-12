@@ -31,20 +31,37 @@
 #if HAVE_STRING_H
 #include <string.h>
 #endif
+#if HAVE_STRING_H
+#include <string.h>
+#endif
+#if HAVE_STDBOOL_H
+#include <stdbool.h>
+#endif
+
+bool YAP_NewExo( PredEntry *ap, size_t data, struct udi_info *udi);
+bool YAP_AssertTuples( PredEntry *pe, const Term *ts, size_t m);
 
 //static int exo_write=FALSE;
 
 //void do_write(void) { exo_write=TRUE;}
 
-#define NEXTOP(V,TYPE)    ((yamop *)(&((V)->u.TYPE.next)))
-
 #define MAX_ARITY 256
 
-#define FNV32_PRIME ((UInt)16777619)
-#define FNV64_PRIME ((UInt)1099511628211)
-
-#define FNV32_OFFSET ((UInt)2166136261)
-#define FNV64_OFFSET ((UInt)14695981039346656037)
+#if SIZEOF_INT_P==4
+#define FNV32_PRIME (16777619UL)
+#define FNV32_OFFSET (0x811c9dc5UL)
+#define FNV_PRIME FNV32_PRIME
+#define FNV_OFFSET FNV32_OFFSET
+#elif SIZEOF_INT_P==8
+#define FNV64_PRIME (1099511628211)
+#if SIZEOF_LONG_INT==4
+#define FNV64_OFFSET (14695981039346656037ULL)
+#else
+#define FNV64_OFFSET (14695981039346656037UL)
+#endif
+#define FNV_PRIME FNV64_PRIME
+#define FNV_OFFSET FNV64_OFFSET
+#endif
 
 /*MurmurHash3 from: https://code.google.com/p/smhasher/wiki/MurmurHash3*/
 BITS32 rotl32 ( BITS32, int8_t);
@@ -81,7 +98,7 @@ HASH_MURMUR3_32 (UInt arity, CELL *cl, UInt bnds[], UInt sz)
   const BITS32 c1 = 0xcc9e2d51;
   const BITS32 c2 = 0x1b873593;
 
-  hash = FNV32_OFFSET; /*did not find what seed to use yet*/
+  hash = FNV_OFFSET; /*did not find what seed to use yet*/
 
   while (j < arity) {
     if (bnds[j]) {
@@ -191,7 +208,7 @@ HASH_FVN_1A(UInt arity, CELL *cl, UInt bnds[], UInt sz)
   UInt hash;
   UInt  j=0;
 
-  hash = FNV32_OFFSET;
+  hash = FNV_OFFSET;
   while (j < arity) {
     if (bnds[j]) {
       unsigned char *i=(unsigned char*)(cl+j);
@@ -199,7 +216,7 @@ HASH_FVN_1A(UInt arity, CELL *cl, UInt bnds[], UInt sz)
 
       while (i < m) {
 	hash = hash ^ i[0];
-	hash = hash * FNV32_PRIME;
+	hash = hash * FNV_PRIME;
 	i++;
       }
     }
@@ -437,7 +454,7 @@ add_index(struct index_t **ip, UInt bmap, PredEntry *ap, UInt count)
       continue;
     }
 #if DEBUG
-    fprintf(stderr, "entries=%ld collisions=%ld (max=%ld) trys=%ld\n", i->nentries, i->ncollisions,  i->max_col_count, i->ntrys);
+  fprintf(stderr, "entries=" UInt_FORMAT " collisions=" UInt_FORMAT" (max="  UInt_FORMAT ") trys=" UInt_FORMAT "\n", i->nentries, i->ncollisions,  i->max_col_count, i->ntrys);
 #endif
     if (!i->ntrys && !i->is_key) {
       i->is_key = TRUE;
@@ -469,30 +486,30 @@ add_index(struct index_t **ip, UInt bmap, PredEntry *ap, UInt count)
     ptr->opc = Yap_opcode(_try_exo);
   else
     ptr->opc = Yap_opcode(_try_all_exo);
-  ptr->u.lp.l = (yamop *)i;
-  ptr->u.lp.p = ap;
+  ptr->y_u.lp.l = (yamop *)i;
+  ptr->y_u.lp.p = ap;
   ptr = NEXTOP(ptr, lp);
   if (count)
     ptr->opc = Yap_opcode(_retry_exo);
   else
     ptr->opc = Yap_opcode(_retry_all_exo);
-  ptr->u.lp.p = ap;
-  ptr->u.lp.l = (yamop *)i;
+  ptr->y_u.lp.p = ap;
+  ptr->y_u.lp.l = (yamop *)i;
   ptr = NEXTOP(ptr, lp);
   for (j = 0; j < i->arity; j++) {
     ptr->opc = Yap_opcode(_get_atom_exo);
 #if PRECOMPUTE_REGADDRESS
-    ptr->u.x.x = (CELL) (XREGS + (j+1));
+    ptr->y_u.x.x = (CELL) (XREGS + (j+1));
 #else
-    ptr->u.x.x = j+1;
+    ptr->y_u.x.x = j+1;
 #endif
     ptr = NEXTOP(ptr, x);
   }
   ptr->opc = Yap_opcode(_procceed);
-  ptr->u.p.p = ap;
+  ptr->y_u.p.p = ap;
   ptr = NEXTOP(ptr, p);
   ptr->opc = Yap_opcode(_Ystop);
-  ptr->u.l.l = i->code;
+  ptr->y_u.l.l = i->code;
   Yap_inform_profiler_of_clause((char *)(i->code), (char *)NEXTOP(ptr,l), ap, GPROF_INDEX);
   if (ap->PredFlags & UDIPredFlag) {
     Yap_new_udi_clause( ap, NULL, (Term)ip);
@@ -637,6 +654,46 @@ exodb_get_space( Term t, Term mod, Term tn )
   return mcl;
 }
 
+bool
+YAP_NewExo( PredEntry *ap, size_t data, struct udi_info *udi)
+{
+  MegaClause *mcl;
+  size_t required;
+  struct index_t **li;
+
+  if (data <= ap->ArityOfPE*sizeof(CELL)) {
+    return false;
+  }
+  // data = ncls*arity*sizeof(CELL);
+  required = data+sizeof(MegaClause)+2*sizeof(struct index_t *);
+  while (!(mcl = (MegaClause *)Yap_AllocCodeSpace(required))) {
+    if (!Yap_growheap(FALSE, required, NULL)) {
+      /* just fail, the system will keep on going */
+      return false;
+    }
+  }
+  Yap_ClauseSpace += required;
+  /* cool, it's our turn to do the conversion */
+  mcl->ClFlags = MegaMask|ExoMask;
+  mcl->ClSize = required;
+  mcl->ClPred = ap;
+  mcl->ClItemSize = ap->ArityOfPE*sizeof(CELL);
+  mcl->ClNext = NULL;
+  li = (struct index_t **)(mcl->ClCode);
+  li[0] = li[1] = NULL;
+  ap->cs.p_code.FirstClause =
+    ap->cs.p_code.LastClause =
+    mcl->ClCode;
+  ap->PredFlags |= MegaClausePredFlag;
+  ap->cs.p_code.NOfClauses = 0;
+  if (ap->PredFlags & (SpiedPredFlag|CountPredFlag|ProfiledPredFlag)) {
+    ap->OpcodeOfPred = Yap_opcode(_spy_pred);
+  } else {
+    ap->OpcodeOfPred = Yap_opcode(_enter_exo);
+  }
+  ap->CodeOfPred = ap->cs.p_code.TrueCodeOfPred = (yamop *)(&(ap->OpcodeOfPred));
+  return true;
+}
 
 static Int
 p_exodb_get_space( USES_REGS1 )
@@ -650,7 +707,7 @@ p_exodb_get_space( USES_REGS1 )
 }
 
 #define DerefAndCheck(t, V)			\
-  t = Deref(V); if(IsVarTerm(t) || !(IsAtomOrIntTerm(t))) Yap_Error(TYPE_ERROR_ATOM, t0, "load_db");
+  t = Deref(V); if(IsVarTerm(t) || !(IsAtomOrIntTerm(t))) Yap_Error(TYPE_ERROR_ATOMIC, t0, "load_db");
 
 static Int
 store_exo(yamop *pc, UInt arity, Term t0)
@@ -666,6 +723,19 @@ store_exo(yamop *pc, UInt arity, Term t0)
     cpc++;
   }
   return TRUE;
+}
+
+bool
+YAP_AssertTuples( PredEntry *pe, const Term *ts, size_t m)
+{
+  MegaClause *mcl = ClauseCodeToMegaClause(pe->cs.p_code.FirstClause);
+  size_t           i, n = pe->cs.p_code.NOfClauses;
+  ADDR   base = (ADDR)mcl->ClCode+2*sizeof(struct index_t *);
+  for (i=0; i<n; i++) {
+    yamop *ptr = (yamop *)(base+n*(mcl->ClItemSize));
+    store_exo( ptr, pe->ArityOfPE, ts[i]);
+  }
+  return true;
 }
 
 static void

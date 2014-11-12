@@ -253,7 +253,7 @@ extern void	Yap_WakeUp(CELL *v);
 
 #define Bind_Local(A,D)	   { TRAIL_LOCAL(A,D); *(A) = (D); }
 #define Bind_Global(A,D)       { *(A) = (D); if (__builtin_expect(GlobalIsAttVar(A),0)) Yap_WakeUp(A); else TRAIL_GLOBAL(A,D);   }
-#define Bind(A,D)              { *(A) = (D); if (A < HR) {  if (__builtin_expect(GlobalIsAttVar(A),0)) Yap_WakeUp(A); else TRAIL_GLOBAL(A,D);  } else { TRAIL_LOCAL(A,D); }	 }
+#define YapBind(A,D)              { *(A) = (D); if (A < HR) {  if (__builtin_expect(GlobalIsAttVar(A),0)) Yap_WakeUp(A); else TRAIL_GLOBAL(A,D);  } else { TRAIL_LOCAL(A,D); }	 }
 #define Bind_NonAtt(A,D)       { *(A) = (D); TRAIL(A,D);	 }
 #define Bind_Global_NonAtt(A,D)       { *(A) = (D); TRAIL_GLOBAL(A,D); }
 #define Bind_and_Trail(A,D)       { *(A) = (D); DO_TRAIL(A, D); }
@@ -326,7 +326,7 @@ close_attvar_chain(CELL *dvarsmin, CELL *dvarsmax) {
     dvarsmin += 1;
     do {
       CELL *newv;
-      Bind(dvarsmin+1, dvarsmin[1]);
+      YapBind(dvarsmin+1, dvarsmin[1]);
       if (IsUnboundVar(dvarsmin))
 	break;
       newv = CellPtr(*dvarsmin);
@@ -373,21 +373,21 @@ Yap_unify_constant(register Term a, register Term cons)
 	return(FALSE);
       if (IsExtensionFunctor(f)) {
 	switch((CELL)f) {
-	case (CELL)FunctorDBRef:
+	case db_ref_e:
 	  return(a == cons);
-	case (CELL)FunctorLongInt:
+	case long_int_e:
 	  {
 	    CELL d0 = RepAppl(a)[1];
 	    CELL d1 = RepAppl(cons)[1];
 	    return d0 == d1;
 	  }
-	case (CELL)FunctorDouble:
+	case double_e:
 	  {
 	    Float d0 = FloatOfTerm(a);
 	    Float d1 = FloatOfTerm(cons);
 	    return d0 == d1;
 	  }
-	case (CELL)FunctorBigInt:
+	case big_int_e:
 #ifdef USE_GMP
 	  return (Yap_gmp_tcmp_big_big(a, cons) == 0);
 #endif /* USE_GMP */
@@ -400,7 +400,7 @@ Yap_unify_constant(register Term a, register Term cons)
   }
 
   deref_body(a,pt,unify_cons_unk,unify_cons_nonvar);
-  Bind(pt,cons);
+  YapBind(pt,cons);
   return(TRUE);
 }
 

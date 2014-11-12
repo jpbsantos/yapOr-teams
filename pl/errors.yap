@@ -194,9 +194,35 @@
 *									 *
 *************************************************************************/
 
+
+/** @defgroup YAPError Error Handling
+@ingroup YAPControl
+
+The error handler is called when there is an execution error or a
+warning needs to be displayed. The handlers include a number of hooks
+to allow user-control.
+
+*/	
+
+:- system_module( '$_errors', [message_to_string/2,
+        print_message/2], ['$Error'/1,
+        '$do_error'/2]).
+
+:- use_system_module( '$messages', [file_location/2,
+        generate_message/3,
+        translate_message/3]).
+
+
 '$do_error'(Type,Message) :-
+%        format('~w~n', [Type]),
 	'$current_stack'(local_sp(_,CP,Envs,CPs)),
+%	'$stack_dump',
 	throw(error(Type,[Message|local_sp(Message,CP,Envs,CPs)])).
+
+'$do_pi_error'(type_error(callable,Name/0),Message) :- !,
+	'$do_error'(type_error(callable,Name),Message).
+'$do_pi_error'(Error,Message) :- !,
+	'$do_error'(Error,Message).
 
 '$Error'(E) :-
 	'$LoopError'(E,top).
@@ -209,7 +235,7 @@
 	'$process_error'(Error, Level),
 	fail.
 '$LoopError'(_, _) :-
-	flush_all_streams,
+	flush_output,
 	fail.
 
 '$process_error'('$abort', top) :- !,
@@ -223,15 +249,55 @@
 '$process_error'(error(thread_cancel(Id), G),top) :- !.
 '$process_error'(error(thread_cancel(Id), G), _) :- !,
 	throw(error(thread_cancel(Id), G)).
+'$process_error'(error(permission_error(module,redefined,A),B), Level) :-
+	Level \= top, !,
+	throw(error(permission_error(module,redefined,A),B)).
 '$process_error'(error(Msg, Where), _) :- !,
-	'$set_fpu_exceptions',
+	'$set_fpu_exceptions'(true),
 	print_message(error,error(Msg, Where)).
 '$process_error'(Throw, _) :-
 	print_message(error,error(unhandled_exception,Throw)).
 
+/** @pred  message_to_string(+ _Term_, - _String_) 
+
+
+Translates a message-term into a string object. Primarily intended for SWI-Prolog emulation.
+
+
+
+ */
 message_to_string(Event, Message) :-
 	'$messages':generate_message(Event, Message, []).
 
+/** @pred print_message(+ _Kind_,  _Term_) 
+
+The predicate print_message/2 is used to print messages, notably from
+exceptions in a human-readable format.  _Kind_ is one of
+`informational`, `banner`, `warning`, `error`,
+`help` or `silent`. A human-readable message is printed to
+the stream user_error.
+
+If the Prolog flag verbose is `silent`, messages with
+ _Kind_ `informational`, or `banner` are treated as
+silent.@c  See \cmdlineoption{-q}.
+
+This predicate first translates the  _Term_ into a list of `message
+lines` (see print_message_lines/3 for details).  Next it will
+call the hook message_hook/3 to allow the user intercepting the
+message.  If message_hook/3 fails it will print the message unless
+ _Kind_ is silent.
+
+If you need to report errors from your own predicates, we advise you to
+stick to the existing error terms if you can; but should you need to
+invent new ones, you can define corresponding error messages by
+asserting clauses for `prolog:message/2`. You will need to declare
+the predicate as multifile.
+
+ 
+*/
+print_message(_, _) :-
+    '$nb_getval'('$if_skip_mode',skip,fail), 
+    !.
 print_message(force(_Severity), Msg) :- !,
 	print(user_error,Msg).
 print_message(error, error(Msg,Info)) :- var(Info), !,
@@ -281,7 +347,7 @@ print_message(_, Term) :-
 	flush_output(user_output),
 	flush_output(user_error),
 	print_message_lines(Stream, LinePrefix, [nl|LinesF]).
-'$print_system_message'(Error, Level, Lines) :-
+'$print_system_message'(_Error, Level, Lines) :-
 	flush_output(user_output),
 	flush_output(user_error),
 	'$messages':prefix(Level, LinePrefix, Stream, LinesF, Lines), !,

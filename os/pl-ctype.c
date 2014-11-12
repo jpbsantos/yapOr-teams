@@ -1,3 +1,5 @@
+
+
 /*  Part of SWI-Prolog
 
     Author:        Jan Wielemaker
@@ -24,6 +26,13 @@
 #include "pl-incl.h"
 #include <ctype.h>
 #include "pl-ctype.h"
+
+//! @defgroup YAPChars Character Classification and Manipulation
+//  @ingroup YAPBuiltins
+//
+// This module defines routines to manipulate individual characters.
+//
+// @{
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 This module defines:
@@ -436,12 +445,121 @@ error:
 
 
 
+/** @pred  char_type(? _Char_, ? _Type_) 
+
+
+Like code_type/2, tests or generates alternative _Types_ or
+_Chars_. The character-types are inspired by the standard `C`
+`<ctype.h>` primitives.
+
+ */
+
+/// @memberof code_type/2
 static
 PRED_IMPL("char_type", 2, char_type, PL_FA_NONDETERMINISTIC)
 { return do_char_type(A1, A2, PL__ctx, PL_CHAR);
 }
 
 
+/** @pred  code_type(? _Char_, ? _Type_) 
+
+
+Tests or generates alternative  _Types_ or  _Chars_. The
+character-types are inspired by the standard `C`
+`<ctype.h>` primitives.
+
++  `alnum`
+     _Char_ is a letter (upper- or lowercase) or digit.
+
++ `alpha`
+    _Char_ is a letter (upper- or lowercase).
+
++ `csym`
+    _Char_ is a letter (upper- or lowercase), digit or the underscore (_). These are valid C- and Prolog symbol characters.
+
++ `csymf`
+    _Char_ is a letter (upper- or lowercase) or the underscore (_). These are valid first characters for C- and Prolog symbols
+
++ `ascii`
+    _Char_ is a 7-bits ASCII character (0..127).
+
++ `white`
+    _Char_ is a space or tab. E.i. white space inside a line.
+
++ `cntrl`
+    _Char_ is an ASCII control-character (0..31).
+ 
++ `digit`
+    _Char_ is a digit.
+
++ `digit( _Weight_)`
+    _Char_ is a digit with value _Weight_. I.e. `char_type(X, digit(6))` yields X =  aaasaá'6'. Useful for parsing numbers.
+
++ `xdigit( _Weight_)`
+    _Char_ is a hexa-decimal digit with value  _Weight_. I.e. char_type(a, xdigit(X) yields X = '10'. Useful for parsing numbers.
+
++ `graph`
+    _Char_ produces a visible mark on a page when printed. Note that the space is not included!
+
++ `lower`
+    _Char_ is a lower-case letter.
+
++ `lower(Upper)`
+    _Char_ is a lower-case version of  _Upper_. Only true if _Char_ is lowercase and  _Upper_ uppercase.
+
++ `to_lower(Upper)`
+ _Char_ is a lower-case version of Upper. For non-letters, or letter without case,  _Char_ and Lower are the same. See also upcase_atom/2 and downcase_atom/2.
+
++ `upper`
+ _Char_ is an upper-case letter.
+
++ `upper(Lower)`
+ _Char_ is an upper-case version of Lower. Only true if  _Char_ is uppercase and Lower lowercase.
+
++ `to_upper(Lower)`
+ _Char_ is an upper-case version of Lower. For non-letters, or letter without case,  _Char_ and Lower are the same. See also upcase_atom/2 and downcase_atom/2.
+
++ `punct`
+ _Char_ is a punctuation character. This is a graph character that is not a letter or digit.
+
++ `space`
+ _Char_ is some form of layout character (tab, vertical-tab, newline, etc.).
+
++ `end_of_file`
+ _Char_ is -1.
+
++ `end_of_line`
+ _Char_ ends a line (ASCII: 10..13).
+
++ `newline`
+ _Char_ is a the newline character (10).
+
++ `period`
+ _Char_ counts as the end of a sentence (.,!,?).
+
++ `quote`
+ _Char_ is a quote-character.
+
++ `paren(Close)`
+ _Char_ is an open-parenthesis and Close is the corresponding close-parenthesis. 
+
+
++ `code_type(? _Code_, ? _Type_)`
+
+
+As char_type/2, but uses character-codes rather than
+one-character atoms. Please note that both predicates are as
+flexible as possible. They handle either representation if the
+argument is instantiated and only will instantiate with an integer
+code or one-character atom depending of the version used. See also
+the prolog-flag double_quotes and the built-in predicates 
+atom_chars/2 and atom_codes/2.
+
+
+
+
+ */
+/// @memberof code_type/2
 static
 PRED_IMPL("code_type", 2, code_type, PL_FA_NONDETERMINISTIC)
 { return do_char_type(A1, A2, PL__ctx, PL_CODE);
@@ -600,12 +718,31 @@ modify_case_atom(term_t in, term_t out, int down)
 }
 
 
+/** @pred  downcase_atom(+ _Word_, - _LowerCaseWord_) 
+
+If the first argument is bound to an atom _Word_, the
+second argument shoud unify with an atom such that all alphabetic cdes
+are lower case, _LowerCaseWord_. Non-alphabetic characers are
+preserved.
+
+ */
+
+/// @memberof downcase_atom/2
 static
 PRED_IMPL("downcase_atom", 2, downcase_atom, 0)
 { return modify_case_atom(A1, A2, TRUE);
 }
 
+/** @pred  upcase_atom(+ _Word_, - _UpCaseWord_) 
 
+If the first argument is bound to an atom _Word_, the
+second argument shoud unify with an atom such that all alphabetic cdes
+are up case, _UpCaseWord_. Non-alphabetic characers are
+preserved.
+
+ */
+
+/// @memberof upcase_atom/2
 static
 PRED_IMPL("upcase_atom", 2, upcase_atom, 0)
 { return modify_case_atom(A1, A2, FALSE);
@@ -650,6 +787,24 @@ write_normalize_space(IOSTREAM *out, term_t in)
 }
 
 
+/** @pred  normalize_space(- _Out_, + _In_) 
+
+Remove white space at the beginning an end of the word _In_, and replace
+sequences of white space in the middle of _In_ by a single white
+space.
+~~~
+ ?- normalize_space(atom(X), '  the white     fox jumped ').
+X = 'the white fox jumped'.
+ ?- normalize_space(string(X), '  over the           lazy dog ').
+X = "over the lazy dog".
+~~~
+
+Notice that the first argument is bound to a stream descriptor in the
+style of format/3.
+
+ */
+
+/// @memberof normalize_space/2
 static
 PRED_IMPL("normalize_space", 2, normalize_space, 0)
 { redir_context ctx;
@@ -666,12 +821,15 @@ PRED_IMPL("normalize_space", 2, normalize_space, 0)
 }
 
 
+/// @addtogroup SetLocale
+// @{
+//
 
 		 /*******************************
 		 *	       LOCALE		*
 		 *******************************/
 
-#if defined(HAVE_LOCALE_H) && defined(HAVE_SETLOCALE)
+#if O_LOCALE
 #include <locale.h>
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -721,7 +879,13 @@ static lccat lccats[] =
   { 0,           NULL }
 };
 
+/// @}
 
+/** @pred  setlocale( + _In_, - _Old_, -_New_) 
+
+ */
+
+/// @memberof setlocale/3
 static
 PRED_IMPL("setlocale", 3, setlocale, 0)
 { PRED_LD
@@ -773,7 +937,7 @@ PRED_IMPL("setlocale", 3, setlocale, 0)
 }
 
 #endif
-
+/// @}
 
 		 /*******************************
 		 *      PUBLISH PREDICATES	*
@@ -843,15 +1007,20 @@ static const enc_map map[] =
 IOENC
 initEncoding(void)
 { GET_LD
+#if HAVE_SETLOCALE
+    char *enc;
+#endif
 
   if ( LD )
   { if ( !LD->encoding )
-      { char *enc, *encp;
+      {
 
       if ( !init_locale() )
       { LD->encoding = ENC_ISO_LATIN_1;
+#if HAVE_SETLOCALE
       } else if ( (enc = setlocale(LC_CTYPE, NULL)) )
-      { LD->encoding = ENC_ANSI;		/* text encoding */
+      {  char *encp;
+	LD->encoding = ENC_ANSI;		/* text encoding */
 
 	if ( (encp = strchr(enc, '.')) )
 	{ const enc_map *m;
@@ -874,8 +1043,8 @@ initEncoding(void)
 	    }
 	  }
 	}
-      } else
-      { LD->encoding = ENC_ISO_LATIN_1;
+#endif
+      } else { LD->encoding = ENC_ISO_LATIN_1;
       }
     }
 
@@ -890,4 +1059,6 @@ void
 initCharTypes(void)
 { initEncoding();
 }
+
+/// @}
 

@@ -14,11 +14,430 @@
 * comments:	module support						 *
 *									 *
 *************************************************************************/
-% module handling
+
+/**
+
+   \defgroup YAPModules The YAP Module system 
+
+   @ingroup YAPLoading
+
+  The YAP module system is based on the Quintus/SISCtus module
+system. In this design, modules are named collections of predicates,
+and all predicates belong to a single module. Predicates are only
+visible within a module, or _private_ to that module, but the module
+will most often will also define a list of predicates that are
+_exported_, that is, visible to other modules.
+
+The main predicates in the module system are:
+
+     * module/2 associates a source file to a module. It has two arguments: the name of the new module, and a list of predicates exported by the module.
+
+     * use_module/1 and use_module/2 can be used to load a module. They take as first argument the source file for the module. Whereas use_module/1 loads all exported predicates, use_module/2 only takes the ones given by the second argument.
+
+YAP pre-defines a number of modules. Most system predicates belong to
+the module `prolog`. Predicates from the module `prolog` are
+automatically visible to every module.  The `system` module was
+introduced for SWI-Prolog compatibility, and in YAP mostly acts as an
+alias to `prolog`.
+
+YAP is always associated to a module, the current <em>source
+module</em> or <em>type-in module</em>. By default, all predicates
+read-in and all calls to a goal will be made to predicates visible to
+the current source module, Initially, the source module for YAP is the
+module `user`. Thus Prolog programs that do not define modules will
+operate within the `user` module. In this case, all predicates will be
+visible to all source files.
+
+YAP also includes a number of libraries and packages, most of them
+ defining their own modules. Note that there is no system mechanism to
+ avoid clashes between module names, so it is up to the programmer to
+ carefully choose the names for her own program modules.
+
+The main mechanism to change the current type-in module is by using
+the module/2 declaration.This declaration sets the source module when
+it starts consulting a file, and resets it at the end.  One can set
+the type-in module permanently by using the built-in `module/1`.
+
+\subsection Explicit Naming
+
+The module system allows one to _explicitly_ specify the source mode for
+a clause by prefixing a clause with its module, say:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+user:(a :- b).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+
+it is also possible to type
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl 
+
+user:a :- user:b.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+
+both formulations describe the same clause, independently of the
+current type-in module.
+
+In fact, it is sufficient to specify the source mode for the clause's
+head:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+user:a :- b.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if the current type-in module is `m`, the clause could also be written as:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+user:a :- m:b.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The compiler rewrites the source clauses to ensure that explicit calls
+are respected, and that implicit calls are made to the current source
+module.
+
+A goal should refer to a predicate visible within the current type-in
+module. Thus, if a goal appears in a text file with a module
+declaration, the goal refers to that module's context (but see the
+initialization/1 directive for more details). 
+
+Again, one can override this rule by prefixing a goal with a module to
+be consulted. The following query:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+?- nasa:launch(apollo,13).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ invokes the goal `launch(apollo,13)` as if the current source
+module was `nasa`.
+
+YAP and other Prolog systems allow the module prefix to see all
+predicates visible in the module, including predicates private to the
+module.  This rule allows maximum flexibility, but it also breaks
+encapsulation and should be used with care. The ciao language proposes
+a different approach to this problem, see \cite .
+
+Modules are not always associated with a source-file. They
+may range over several files, by using the
+`include`directive. Moreover, they may not be associated to any source
+file. As an example, 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+?- assert( nasa:launch(apollo,13) ).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+will create a module `nasa`, if does not already exist. In fact it is
+sufficient to call a predicate from a module to implicitly create the
+module. Hence after this call:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+?- nasa:launch(apollo,13).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+there will be a `nasa`module in the system, even if nasa:launch/2 is
+not at all defined.
+
+\{ 
+
+**/
+:- system_module( '$_modules', [abolish_module/1,
+        add_import_module/3,
+        current_module/1,
+        current_module/2,
+        delete_import_module/2,
+        expand_goal/2,
+        export/1,
+        export_list/2,
+        export_resource/1,
+        import_module/2,
+        ls_imports/0,
+        module/1,
+        module_property/2,
+        set_base_module/1,
+        source_module/1,
+        use_module/1,
+        use_module/2,
+        use_module/3], ['$add_to_imports'/3,
+        '$clean_cuts'/2,
+        '$convert_for_export'/7,
+        '$do_import'/3,
+        '$extend_exports'/3,
+        '$get_undefined_pred'/4,
+        '$imported_pred'/4,
+        '$meta_expansion'/6,
+        '$meta_predicate'/2,
+        '$meta_predicate'/4,
+        '$module'/3,
+        '$module'/4,
+        '$module_expansion'/6,
+        '$module_transparent'/2,
+        '$module_transparent'/4]).
+
+:- use_system_module( '$_arith', ['$c_built_in'/3]).
+
+:- use_system_module( '$_consult', ['$lf_opt'/3,
+        '$load_files'/3]).
+
+:- use_system_module( '$_debug', ['$skipeol'/1]).
+
+:- use_system_module( '$_errors', ['$do_error'/2]).
+
+:- use_system_module( '$_eval', ['$full_clause_optimisation'/4]).
+
+:- '$purge_clauses'(module(_,_), prolog).
+:- '$purge_clauses'('$module'(_,_), prolog).
+:- '$purge_clauses'(use_module(_), prolog).
+:- '$purge_clauses'(use_module(_,_), prolog).
+%
+% start using default definition of module.
+%
+
+/**
+   \pred use_module( +Files ) is directive
+   loads a module file
+
+This predicate loads the file specified by _Files_, importing all
+their public predicates into the current type-in module. It is
+implemented as if by:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+use_module(F) :-
+	load_files(F, [if(not_loaded),must_be_module(true)]).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Notice that _Files_ may be a single file, or a list with a number
+files. The _Files_  are loaded in YAP only once, even if they have been
+updated meanwhile. YAP should also verify whether the files actually
+define modules. Please consult load_files/3 for other options when
+loading a file.
+
+Predicate name clashes between two different modules may arise, either
+when trying to import predicates that are also defined in the current
+type-in module, or by trying to import the same predicate from two
+different modules.
+
+In the first case, the local predicate is considered to have priority
+and use_module/1 simply gives a warning. As an example, if the file
+`a.pl` contains:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+:- module( a, [a/1] ).
+
+:- use_module(b).
+
+a(1).
+a(X) :- b(X).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+and the file `b.pl` contains:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+:- module( b, [a/1,b/1] ).
+
+a(2).
+
+b(1).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+YAP will execute as follows:
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+?- [a].
+ % consulting .../a.pl...
+  % consulting .../b.pl...
+  % consulted .../b.pl in module b, 0 msec 0 bytes
+ % consulted .../a.pl in module a, 1 msec 0 bytes
+true.
+ ?- a(X).
+X = 1 ? ;
+X = 1.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The example shows that the query `a(X)`has a single answer, the one
+defined in `a.pl`. Calls to `a(X)`succeed in the top-level, because
+the module `a` was loaded into `user`. On the other hand, `b(X)`is not
+exported by `a.pl`, and is not available to calls, although it can be
+accessed as a predicate in the module 'a' by using the `:` operator.
+
+Next, consider the three files `c.pl`, `d1.pl`, and `d2.pl`:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+% c.pl
+:- module( c, [a/1] ).
+
+:- use_module([d1, d2]).
+
+a(X) :-
+	b(X).
+a(X) :-
+	c(X).
+a(X) :-
+   d(X).
+
+% d1.pl
+:- module( d1, [b/1,c/1] ).
+
+b(2).
+c(3).
+
+
+% d2.pl
+:- module( d2, [b/1,d/1] ).
+
+b(1).
+d(4).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The result is as follows:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+./yap -l c
+YAP 6.3.4 (x86_64-darwin13.3.0): Tue Jul 15 10:42:11 CDT 2014
+     
+     ERROR!!
+     at line 3 in o/d2.pl,
+     PERMISSION ERROR- loading .../c.pl: modules d1 and d2 both define b/1
+ ?- a(X).
+X = 2 ? ;
+     ERROR!!
+     EXISTENCE ERROR- procedure c/1 is undefined, called from context  prolog:$user_call/2
+                 Goal was c:c(_131290)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The state of  the module system after this error is undefined.
+
+
+**/
+
+use_module(F) :- '$load_files'(F,
+			       [if(not_loaded),must_be_module(true)], use_module(F)).
+
+	
+
+/**
+  \pred  use_module(+Files, +Imports)
+  loads a module file but only imports the named predicates
+
+
+This predicate loads the file specified by _Files_, importing their
+public predicates specified by _Imports_ into the current type-in
+module. It is implemented as if by:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+use_module(Files, Imports) :-
+	load_files(Files, [if(not_loaded),must_be_module(true),imports(Imports)]).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The _Imports_ argument may be use to specify which predicates one
+wants to load. It can also be used to give the predicates a different name. As an example,
+the graphs library is implemented on top of the red-black trees library, and some predicates are just aliases:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~pl
+:- use_module(library(rbtrees), [
+	rb_min/3 as min_assoc,
+	rb_max/3 as max_assoc,
+
+        ...]).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Unfortunately it is still not possible to change argument order.
+
+**/
+use_module(F,Is) :-
+	'$load_files'(F, [if(not_loaded),must_be_module(true),imports(Is)], use_module(F,Is)).
+
+/** 
+  \pred module(+M) is det
+   set the type-in module
+
+
+Defines  _M_ to be the current working or type-in module. All files
+which are not bound to a module are assumed to belong to the working
+module (also referred to as type-in module). To compile a non-module
+file into a module which is not the working one, prefix the file name
+with the module name, in the form ` _Module_: _File_`, when
+loading the file.
+
+**/
+module(N) :-
+	var(N), 
+	'$do_error'(instantiation_error,module(N)).
+module(N) :-
+	atom(N), !,
+	% set it as current module.
+	'$current_module'(_,N).
+module(N) :-
+	'$do_error'(type_error(atom,N),module(N)).
+
+/**
+ \pred	module(+ Module:atom, +ExportList:list) is directive
+  define a new module
+
+This directive defines the file where it appears as a _module file_;
+it must be the first declaration in the file.  _Module_ must be an
+atom specifying the module name; _ExportList_ must be a list
+containing the module's public predicates specification, in the form
+`[predicate_name/arity,...]`. The _ExportList_ can  include
+operator declarations for operators that are exported by the module.
+
+The public predicates of a module file can be made accessible to other
+files through loading the source file, using the directives
+use_module/1 or use_module/2,
+ensure_loaded/1 and the predicates
+consult/1 or reconsult/1. The
+non-public predicates of a module file are not supposed to be visible
+to other modules; they can, however, be accessed by prefixing the module
+name with the `:/2` operator.
+
+**/
+'$module_dec'(N, Ps) :-
+	source_location(F, _),
+	b_getval( '$source_file', F0 ),
+	'$add_module_on_file'(N, F, F0, Ps),
+	'$current_module'(_,N).
 
 '$module'(_,N,P) :-
 	'$module_dec'(N,P).
 
+/** 
+ \pred module(+ M:atom,+ L:list ) is directive
+  the current file defines module _M_ with exports _L_. The list may include
+
+  + predicate indicators
+  
+  + operator definitions that look like calls to op/3.
+
+The list _L_ may include predicates imported from other modules. If
+you want to fully reexport a module, or a sub-set, also consider reexport/1.
+
+Similar to module/2, this directive defines the file where it
+appears in as a module file; it must be the first declaration in the file.
+ _M_ must be an atom specifying the module name;  _L_ must be a
+list containing the module's public predicates specification, in the
+form `[predicate_name/arity,...]`.
+
+The last argument  _Options_ must be a list of options, which can be:
+     + <b>filename</b>
+       the filename for a module to import into the current module.
+
+     + <b>library( +File )</b>
+       a library file to import into the current module.
+
+     + <b>hide( +Opt)</b>
+        if  _Opt_ is `false`, keep source code for current module, if `true`, disable.
+
+     + <b>export(+PredicateIndicator )</b>
+		Add predicates to the public list of the context module. This implies
+	the predicate will be imported into another module if this module
+	is imported with use_module/1 and use_module/2.
+
+     + <b>export_list(? _Mod_,? _ListOfPredicateIndicator_)</b>
+       The list  _ListOfPredicateIndicator_ contains all predicates
+     	exported by module  _Mod_
+
+Note that predicates are normally exported using the directive
+`module/2`. The `export/1` argumwnt is meant to allow export from
+dynamically created modules. The directive argument may also be a list
+of predicates.
+
+**/
 '$module'(O,N,P,Opts) :- !,
 	'$module'(O,N,P),
 	'$process_module_decls_options'(Opts,module(Opts,N,P)).
@@ -37,11 +456,11 @@
 '$process_module_decls_option'(Var,M) :- 
 	var(Var), 
 	'$do_error'(instantiation_error,M).
-'$process_module_decls_option'(At,_) :- 
+'$process_module_decls_option'(At,M) :- 
 	atom(At), !,
-	'$use_module'(At).
-'$process_module_decls_option'(library(L),_) :- !,
-	'$use_module'(library(L)).
+	use_module(M:At).
+'$process_module_decls_option'(library(L),M) :- !,
+	use_module(M:library(L)).
 '$process_module_decls_option'(hidden(Bool),M) :- !,
 	'$process_hidden_module'(Bool, M).
 '$process_module_decls_option'(Opt,M) :- 
@@ -61,74 +480,39 @@
 '$prepare_restore_hidden'(Old,New) :-
 	recorda('$system_initialisation', source_mode(New,Old), _).
 
-module(N) :-
-	var(N), 
-	'$do_error'(instantiation_error,module(N)).
-module(N) :-
-	atom(N), !,
-	% set it as current module.
-	'$current_module'(_,N).
-module(N) :-
-	'$do_error'(type_error(atom,N),module(N)).
+'$add_module_on_file'(DonorMod, DonorF, SourceF, Exports) :-
+    recorded('$module','$module'(OtherF, DonorMod, _, _, _),R),
+    % the module has been found, are we reconsulting?
+    (
+	DonorF \= OtherF
+    ->
+        '$do_error'(permission_error(module,redefined,DonorMod, OtherF, DonorF),module(DonorMod,Exports))
+    ;
+      recorded('$module','$module'(DonorF,DonorMod, SourceF,  _, _), R),
+      erase( R ),
+      fail
+    ).
+'$add_module_on_file'(DonorM, DonorF, SourceF, Exports) :-
+    '$current_module'( HostM ),
+    ( recorded('$module','$module'( HostF, HostM, _, _, _),_) -> true ; HostF = user_input ),
+    % first build the initial export tablee
+    '$convert_for_export'(all, Exports, DonorM, HostM, TranslationTab, AllExports0, load_files),
+    sort( AllExports0, AllExports ),
+    ( source_location(_, Line) -> true ; Line = 0 ),
+    '$add_to_imports'(TranslationTab, DonorM, DonorM), % insert ops, at least for now
+    % last, export everything to the host: if the loading crashed you didn't actually do
+    % no evil.
+    recorda('$module','$module'(DonorF,DonorM,SourceF, AllExports, Line),_).
 
-'$module_dec'(N, Ps) :-
-	'$current_module'(_,N),
-	source_location(F, _),
-	'$add_module_on_file'(N, F, Ps).
-
-'$add_module_on_file'(Mod, F, Exports) :-
-	recorded('$module','$module'(F0,Mod,_,_),R), !,
-	'$add_preexisting_module_on_file'(F, F0, Mod, Exports, R).
-'$add_module_on_file'(Module, F, Exports) :-
-	'$convert_for_export'(all, Exports, Module, Module, TranslationTab, AllExports0, load_files),
-	'$add_to_imports'(TranslationTab, Module, Module), % insert ops, at least for now
-	sort( AllExports0, AllExports ),
-	( source_location(_, Line) -> true ; Line = 0 ),
-	recorda('$module','$module'(F,Module,AllExports, Line),_).
-
-'$extend_exports'(F, Exps , NewF) :-
-writeln( (Exps, F, NewF ) ),
-	recorded('$module','$module'(NewF,NMod, NewExports, _),_R),
-	recorded('$module','$module'(F, Module,OriginalExports,Line),R),
-	'$convert_for_export'(Exps, NewExports, NMod, NMod, _TranslationTab, NewExports1, load_files),
-	'$add_exports'( NewExports1, OriginalExports, Exports ),
-	erase(R),
-	sort( Exports, AllExports ),
-	recorda('$module','$module'(F,Module,AllExports,Line),_),
-	fail.
-'$extend_exports'(_F, _Module, _NewExports).
-
-'$add_exports'( [], Exports, Exports ).
-'$add_exports'( [PI|NewExports], OriginalExports, [PI|Exports] ) :-
-	% do not check for redefinitions, at least for now.
-	'$add_exports'( NewExports, OriginalExports, Exports ).
-
-
-% redefining a previously-defined file, no problem.
-'$add_preexisting_module_on_file'(F, F, Mod, Exports, R) :- !,
-	erase(R),
-	( recorded('$import','$import'(Mod,_,_,_,_,_),R), erase(R), fail; true),
-	( source_location(_, Line) -> true ; Line = 0 ),
-	recorda('$module','$module'(F,Mod,Exports, Line),_).
-'$add_preexisting_module_on_file'(F,F0,Mod,Exports,R) :-
-	repeat,
-	format(user_error, "The module ~a is being redefined.~n    Old file:  ~a~n    New file:  ~a~nDo you really want to redefine it? (y or n)",[Mod,F0,F]),
-	'$mod_scan'(C), !,
-	( C is "y" ->
-	    '$add_preexisting_module_on_file'(F, F, Mod, Exports, R)
-	 ;
-	    '$do_error'(permission_error(module,redefined,Mod),module(Mod,Exports))
-	).
-
-'$mod_scan'(C) :-
-	stream_property(user_input,tty(true)),
-	stream_property(user_error,tty(true)),
-        !,
-	repeat,
-	get0(C),
-	'$skipeol'(C),
-	(C is "y" -> true ; C is "n" -> true ; C is "h" -> true  ; C is "e" -> halt(1) ; format(user_error,  ' Please answer with ''y'', ''n'', ''e'' or ''h'' ', []), fail), !.
-'$mod_scan'(C) :- C is "n".
+'$extend_exports'(HostF, Exports, DonorF ) :-
+   ( recorded('$module','$module'( DonorF, DonorM, _,DonorExports, _),_) -> true ; DonorF = user_input ),
+    ( recorded('$module','$module'( HostF, HostM, SourceF, _, _),_) -> true ; HostF = user_input ),
+    recorded('$module','$module'(HostF, HostM, _, AllExports, _Line), R), erase(R),
+    '$convert_for_export'(Exports, DonorExports, DonorM, HostM, _TranslationTab, AllReExports, reexport(DonorF, Exports)),
+    lists:append( AllReExports, AllExports, Everything0 ),
+    sort( Everything0, Everything ),
+    ( source_location(_, Line) -> true ; Line = 0 ),
+    recorda('$module','$module'(HostF,HostM,SourceF, Everything, Line),_).
 
 '$module_produced by'(M, M0, N, K) :-
 	recorded('$import','$import'(M,M0,_,_,N,K),_), !.
@@ -138,7 +522,48 @@ writeln( (Exps, F, NewF ) ),
 	'$module_produced by'(M,MI,N1,K1).	
 
 
-% expand module names in a clause
+/** \pred current_module( ? Mod:atom) is nondet
+   : _Mod_ is any user-visible module.
+
+*/
+/** @pred  current_module( _M_) 
+
+
+Succeeds if  _M_ are defined modules. A module is defined as soon as some
+predicate defined in the module is loaded, as soon as a goal in the
+module is called, or as soon as it becomes the current type-in module.
+
+ 
+*/
+current_module(Mod) :-
+	'$all_current_modules'(Mod),
+	\+ '$system_module'(Mod).
+
+/** \pred current_module( ? Mod:atom, ? File : file ) is nondet
+   : _Mod_ is any user-visible module and _File_ its source file, or `user` if none exists.
+
+*/
+/** @pred  current_module( _M_, _F_)
+
+Succeeds if  _M_ are current modules associated to the file  _F_.
+
+
+
+
+ */
+current_module(Mod,TFN) :-
+	'$all_current_modules'(Mod),
+	( recorded('$module','$module'(TFN,Mod,_,_Publics, _),_) -> true ; TFN = user ).
+
+/** \pred source_module( - Mod:atom ) is nondet
+   : _Mod_ is the current read-in or source module.
+
+*/
+source_module(Mod) :-
+	'$current_module'(Mod).
+
+
+% expand module names in a clause (interface predicate).
 % A1: Input Clause
 % A2: Output Class to Compiler (lives in module HM) 
 % A3: Output Class to clause/2 and listing (lives in module HM)
@@ -149,19 +574,19 @@ writeln( (Exps, F, NewF ) ),
 % A6: head module (this is the one used in compiling and accessing).
 %
 %
-'$module_expansion'(H,H,H,_M,_HM) :- var(H), !.
-'$module_expansion'((H:-B),(H:-B1),(H:-BOO),M,HM) :- !,
-	'$is_mt'(M, H, B, IB, MM),
-	'$module_u_vars'(H,UVars,M),	 % collect head variables in
+'$module_expansion'(H, H, H, _HM, _BM, _SM) :- var(H), !.
+'$module_expansion'((H:-B), (H:-B1), (H:-BOO), HM, BM, SM) :- !,
+	'$is_mt'(HM, H, SM, B, IB, NSM),
+	'$module_u_vars'(H,UVars,HM),	 % collect head variables in
 					 % expanded positions
-	'$module_expansion'(IB,B1,BO,M,MM,HM,UVars),
-	('$full_clause_optimisation'(H, M, BO, BOO) ->
+	'$expand_modules'(IB, B1, BO, HM, BM, NSM, UVars),
+	('$full_clause_optimisation'(H, NSM, BO, BOO) ->
 	  true
 	  ;
 	  BO = BOO
 	).
 % do not expand bodyless clauses.
-'$module_expansion'(H,H,H,_,_).
+'$module_expansion'(H,H,H,_,_,_).
 
 
 '$trace_module'(X) :-
@@ -188,7 +613,7 @@ writeln( (Exps, F, NewF ) ),
 %       code to pass to listing
 %       code to pass to compiler
 %       current module for looking up preds  M
-%       default module  DM
+%       source module  SM
 %       head module   HM
 %
 % to understand the differences, you can consider:
@@ -208,77 +633,126 @@ writeln( (Exps, F, NewF ) ),
 %  d:b(X) :- a:c(a:X), a:d(X), e(X).
 %
 %
-%       head variables.
+%       head variab'$expand_modules'(M:G,G1,GO,HM,_M,_SM,HVars)les.
 %       goals or arguments/sub-arguments?
 % I cannot use call here because of format/3
-'$module_expansion'(V,NG,NG,_,MM,_,HVars) :-
+% modules:
+% A4: module for body of clause (this is the one used in looking up predicates)
+% A5: context module (this is the current context
+% A6: head module (this is the one used in compiling and accessing).
+%
+%
+%'$expand_modules'(V,NG,NG,_,_,SM,HVars):-l writeln(V), fail.
+'$expand_modules'(V,NG,NG,_,_,SM,HVars) :-
 	var(V), !,
 	( '$not_in_vars'(V,HVars)
 	->
-	  NG = call(MM:V)
+	  NG = call(SM:V), 
+	  ( atom(SM) -> NGO = '$execute_in_mod'(V,SM) ; NGO = NG )
 	;
 	  NG = call(V)
 	).	
-'$module_expansion'((A,B),(A1,B1),(AO,BO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars).
-'$module_expansion'((A;B),(A1;B1),(AO;BO),M,MM,HM,HVars) :- var(A), !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars).
-'$module_expansion'((A*->B;C),(A1*->B1;C1),(yap_hacks:current_choicepoint(DCP),AO,yap_hacks:cut_at(DCP),BO; CO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AOO,M,MM,HM,HVars),
+'$expand_modules'(depth_bound_call(G,D),
+		  depth_bound_call(G1,D),
+		  ('$set_depth_limit_for_next_call'(D),GO),
+		  HM,BM,SM,HVars) :- 
+    '$expand_modules'(G,G1,GO,HM,BM,SM,HVars),
+    '$composed_built_in'(GO), !.
+'$expand_modules'((A,B),(A1,B1),(AO,BO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars).
+'$expand_modules'((A;B),(A1;B1),(AO;BO),HM,BM,SM,HVars) :- var(A), !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars).
+'$expand_modules'((A*->B;C),(A1*->B1;C1),(yap_hacks:current_choicepoint(DCP),AO,yap_hacks:cut_at(DCP),BO; CO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AOO,HM,BM,SM,HVars),
 	'$clean_cuts'(AOO, AO),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars),
-	'$module_expansion'(C,C1,CO,M,MM,HM,HVars).
-'$module_expansion'((A;B),(A1;B1),(AO;BO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars).
-'$module_expansion'((A|B),(A1|B1),(AO|BO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars).
-'$module_expansion'((A->B),(A1->B1),(AO->BO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AOO,M,MM,HM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars),
+	'$expand_modules'(C,C1,CO,HM,BM,SM,HVars).
+'$expand_modules'((A;B),(A1;B1),(AO;BO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars).
+'$expand_modules'((A|B),(A1|B1),(AO|BO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars).
+'$expand_modules'((A->B),(A1->B1),(AO->BO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AOO,HM,BM,SM,HVars),
 	'$clean_cuts'(AOO, AO),
-	'$module_expansion'(B,B1,BO,M,MM,HM,HVars).
-'$module_expansion'(\+A,\+A1,\+AO,M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars).
-'$module_expansion'(not(A),not(A1),not(AO),M,MM,HM,HVars) :- !,
-	'$module_expansion'(A,A1,AO,M,MM,HM,HVars).
-'$module_expansion'(true,true,true,_,_,_,_) :- !.
-'$module_expansion'(fail,fail,fail,_,_,_,_) :- !.
-'$module_expansion'(false,false,false,_,_,_,_) :- !.
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars).
+'$expand_modules'(\+G,\+G,A\=B,_HM,_BM,_SM,_HVars) :- 
+    nonvar(G),
+    G = (A = B),
+    !.
+'$expand_modules'(\+A,\+A1,(AO-> false;true),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars).
+'$expand_modules'(once(A),once(A1),
+	(yap_hacks:current_choice_point(CP),AO,'$$cut_by'(CP)),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, CP, AO).
+'$expand_modules'(ignore(A),ignore(A1),
+	(AO -> true ; true),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, AO).
+'$expand_modules'(forall(A,B),forall(A1,B1),
+		  ((AO, ( BO-> false ; true)) -> false ; true),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, AO).
+'$expand_modules'(not(A),not(A1),(AO -> fail; true),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO,HM,BM,SM,HVars).
+'$expand_modules'(if(A,B,C),if(A1,B1,C1),
+	(yap_hacks:current_choicepoint(DCP),AO,yap_hacks:cut_at(DCP),BO; CO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars),
+	'$expand_modules'(C,C1,CO,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, DCP, AO).
+'$expand_modules'((A*->B;C),(A1*->B1;C1),
+	(yap_hacks:current_choicepoint(DCP),AO,yap_hacks:cut_at(DCP),BO; CO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars),
+	'$expand_modules'(C,C1,CO,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, DCP, AO).
+'$expand_modules'((A*->B),(A1*->B1),
+	(yap_hacks:current_choicepoint(DCP),AO,BO),HM,BM,SM,HVars) :- !,
+	'$expand_modules'(A,A1,AO0,HM,BM,SM,HVars),
+	'$expand_modules'(B,B1,BO,HM,BM,SM,HVars),
+        '$clean_cuts'(AO0, DCP, AO).
+'$expand_modules'(true,true,true,_,_,_,_) :- !.
+'$expand_modules'(fail,fail,fail,_,_,_,_) :- !.
+'$expand_modules'(false,false,false,_,_,_,_) :- !.
 % if I don't know what the module is, I cannot do anything to the goal,
 % so I just put a call for later on.
-'$module_expansion'(M:G,call(M:G),'$execute_wo_mod'(G,M),_,_,_,_) :- var(M), !.
-'$module_expansion'(M:G,G1,GO,_,_CM,HM,HVars) :- !,
-	'$module_expansion'(G,G1,GO,M,M,HM,HVars).
-'$module_expansion'(G, G1, GO, CurMod, MM, HM,HVars) :-
+'$expand_modules'(M:G,call(M:G),'$execute_wo_mod'(G,M),_,_,_,_) :- var(M), !.
+'$expand_modules'(M:G,G1,GO,HM,_M,_SM,HVars) :- !,
+	'$expand_modules'(G,G1,GO,HM,M,M,HVars).
+'$expand_modules'(G, G1, GO, HM, BM, SM, HVars) :-
 	% is this imported from some other module M1?
-	'$imported_pred'(G, CurMod, GG, M1),
+	'$imported_pred'(G, BM, GG, M1),
 	!,
-	'$module_expansion'(GG, G1, GO, M1, MM, HM,HVars).
-'$module_expansion'(G, G1, GO, CurMod, MM, HM,HVars) :-
-	'$meta_expansion'(G, CurMod, MM, HM, GI, HVars), !,
-	'$complete_goal_expansion'(GI, CurMod, MM, HM, G1, GO, HVars).
-'$module_expansion'(G, G1, GO, CurMod, MM, HM, HVars) :-
-	'$complete_goal_expansion'(G, CurMod, MM, HM, G1, GO, HVars).
+	'$expand_modules'(GG, G1, GO, HM, M1, SM, HVars).
+'$expand_modules'(G, G1, GO, HM, BM, SM, HVars) :-
+	'$meta_expansion'(G, HM, BM, SM, GI, HVars), !,
+	'$complete_goal_expansion'(GI, HM, BM, SM, G1, GO, HVars).
+'$expand_modules'(G, G1, GO, HM, BM, SM, HVars) :-
+	'$complete_goal_expansion'(G, HM, BM, SM, G1, GO, HVars).
 
 expand_goal(G, G) :-
 	var(G), !.
 expand_goal(M:G, M:NG) :-
-	'$do_expand'(G, M, NG), !.
+	'$do_expand'(G, M, prolog, [], NG), !.
 expand_goal(G, NG) :- 
 	'$current_module'(Mod),
-	'$do_expand'(G, Mod, NG), !.
+	'$do_expand'(G, Mod, prolog, [],  NG), !.
 expand_goal(G, G).
 	
-'$do_expand'(G, _, G) :- var(G), !.
-'$do_expand'(M:G, _CurMod, M:GI) :- !,
-	'$do_expand'(G, M, GI).
-'$do_expand'(G, CurMod, GI) :-
+'$do_expand'(G, _HM, _BM, _SM, _, G) :- var(G), !.
+'$do_expand'(M:G, HM, _BM, _SM,  HVars, M:GI) :- !,
+	 nonvar(M),
+	'$do_expand'(G, HM, M, M, HVars, GI).
+'$do_expand'(G, _HM, _BM, SM,  _HVars, GI) :-
 	(
-	 '$pred_exists'(goal_expansion(G,GI), CurMod),
-	 call(CurMod:goal_expansion(G, GI))
+	 '$pred_exists'(goal_expansion(G,GI), SM),
+	 call(SM:goal_expansion(G, GI))
 	->
 	 true
 	;
@@ -287,57 +761,63 @@ expand_goal(G, G).
 	->
 	  true
 	;
-	 user:goal_expansion(G, CurMod, GI)
+	 user:goal_expansion(G, SM, GI)
 	->
 	  true
 	;
 	  user:goal_expansion(G, GI)
 	), !.
-'$do_expand'(G, CurMod, NG) :-
-	'$is_metapredicate'(G,CurMod), !,
+'$do_expand'(G, HM, BM, SM, HVars, NG) :-
+	'$is_metapredicate'(G,BM), !,
 	functor(G, Name, Arity),
-	prolog:'$meta_predicate'(Name,CurMod,Arity,PredDef),
+	prolog:'$meta_predicate'(Name,BM,Arity,PredDef),
 	G =.. [Name|GArgs],
 	PredDef =.. [Name|GDefs],
-	'$expand_args'(GArgs, CurMod, GDefs, NGArgs),
+	'$expand_args'(GArgs, HM, BM, SM, GDefs, HVars, NGArgs),
 	NG =.. [Name|NGArgs].
 
-'$expand_args'([], _, [], []).
-'$expand_args'([A|GArgs], CurMod, [0|GDefs], [NA|NGArgs]) :-
-	'$do_expand'(A, CurMod, NA), !,
-	'$expand_args'(GArgs, CurMod, GDefs, NGArgs).
-'$expand_args'([A|GArgs], CurMod, [_|GDefs], [A|NGArgs]) :-
-	'$expand_args'(GArgs, CurMod, GDefs, NGArgs).
+'$expand_args'([], _, _, _, [], _, []).
+'$expand_args'([A|GArgs], HM, BM, SM,   [0|GDefs], HVars, [NA|NGArgs]) :-
+	'$do_expand'(A, HM, BM, SM, HVars, NA), !,
+	'$expand_args'(GArgs, HM, BM, SM, GDefs, HVars, NGArgs).
+'$expand_args'([A|GArgs], HM, BM, SM, [_|GDefs], HVars, [A|NGArgs]) :-
+	'$expand_args'(GArgs, HM, BM, SM, GDefs, HVars, NGArgs).
 
 % args are:
 %       goal to expand
 %       current module for looking up pred
-%       current module for looking up pred
-%       current module from top-level clause
+%       current module from head of clause  
+%       context module 
+% :- module(m, []). o:p :- n:(g, l).
+%          would be o, n, m.
 %       goal to pass to listing
 %       goal to pass to compiler
 %       head variables.
-'$complete_goal_expansion'(G, CurMod, MM, HM, G1, GO, HVars) :-
+'$complete_goal_expansion'(G, HM, BM, SM, G1, GO, HVars) :-
 %	'$pred_goal_expansion_on',
-	'$do_expand'(G, CurMod, GI),
+	'$do_expand'(G, HM, BM, SM, HVars, GI),
 	GI \== G, !,
-	'$module_expansion'(GI, G1, GO, CurMod, MM, HM, HVars).
-'$complete_goal_expansion'(G, M, _CM, HM, G1, G2, _HVars) :-
-	'$all_system_predicate'(G,M,ORIG), !,
+	'$expand_modules'(GI, G1, GO, HM, BM, SM, HVars).
+'$complete_goal_expansion'(G, HM, BM, SM, G1, G2, _HVars) :-
+	'$all_system_predicate'(G, BM, BM0), !,
 	% make built-in processing transparent.
-	'$match_mod'(G, M, ORIG, HM, G1),
-	'$c_built_in'(G1, M, Gi),
-	Gi = G2.
-'$complete_goal_expansion'(G, GMod, _, HM, NG, NG, _) :-
-	'$match_mod'(G, GMod, GMod, HM, NG).
+       '$match_mod'(G, HM, BM0, SM, G1),
+       '$c_built_in'(G1, SM, G2).
+'$complete_goal_expansion'(G, HM, BM, SM, NG, NG, _) :-
+	'$match_mod'(G, HM, BM, SM, NG).
 
 %'$match_mod'(G, GMod, GMod, NG) :- !,
 %	NG = G.
-'$match_mod'(G, _, SM, _, G) :- SM == prolog, nonvar(G), \+ '$is_multifile'(G,SM), !. % prolog: needs no module info.
+'$match_mod'(G, _, M, _, G) :- 
+    nonvar(G),
+    '$system_predicate'(G,prolog),
+%    \+ '$is_metapredicate'(G, prolog),
+    \+ '$is_multifile'(G,M), 
+    !. % prolog: needs no module info.
 % same module as head,  and body goal (I cannot get rid of qualifier before
 % meta-call.
-'$match_mod'(G, HMod, _, HM, G) :- HMod == HM, !.
-'$match_mod'(G, GMod, _, _,  GMod:G).
+'$match_mod'(G, HMod, BM, _HM, G) :- HMod == BM, !.
+'$match_mod'(G, _, GMod, _,  GMod:G).
 
 
 % be careful here not to generate an undefined exception.
@@ -397,31 +877,35 @@ expand_goal(G, G).
 	'$continue_imported'(FM, IM, FPred, Pred).
 
 
-% module_transparent declaration
-% 
+/**
 
-:- dynamic('$module_transparent'/4).
+ \defgroup YAPMetaPredicates Using Meta-Calls with Modules
+ \ingroup YAPModules
 
-'$module_transparent'((P,Ps), M) :- !, 
-	'$module_transparent'(P, M),
-	'$module_transparent'(Ps, M).
-'$module_transparent'(M:D, _) :- !,
-	'$module_transparent'(D, M).
-'$module_transparent'(F/N, M) :-
-	'$module_transparent'(F,M,N,_), !.
-'$module_transparent'(F/N, M) :-
-	functor(P,F,N),
-	asserta(prolog:'$module_transparent'(F,M,N,P)),
-	'$flags'(P, M, Fl, Fl),
-	NFlags is Fl \/ 0x200004,
-	'$flags'(P, M, Fl, NFlags).
+@{
 
-'$is_mt'(M, H, B, (context_module(CM),B), CM) :-
-	'$module_transparent'(_, M, _, H), !.
-'$is_mt'(M, _, B, B, M).
+  \pred meta_predicate(_G1_,...., _Gn) is directive
 
-% meta_predicate declaration
-% records $meta_predicate(SourceModule,Functor,Arity,Declaration)
+Declares that this predicate manipulates references to predicates.
+Each _Gi_ is a mode specification.
+
+If the argument is `:`, it does not refer directly to a predicate
+but must be module expanded. If the argument is an integer, the argument
+is a goal or a closure and must be expanded. Otherwise, the argument is 
+not expanded. Note that the system already includes declarations for all 
+built-ins.
+
+For example, the declaration for call/1 and setof/3 are:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:- meta_predicate call(0), setof(?,0,?).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+meta_predicate declaration
+ implemented by asserting $meta_predicate(SourceModule,Functor,Arity,Declaration)
+
+*/
+
 
 % directive now meta_predicate Ps :- $meta_predicate(Ps).
 
@@ -474,55 +958,57 @@ expand_goal(G, G).
 % support all/3
 '$uvar'(same( G, _), LF, L)  :-
     '$uvar'(G, LF, L).
+'$uvar'('^'( _, G), LF, L)  :-
+    '$uvar'(G, LF, L).
 
 % expand arguments of a meta-predicate
 % $meta_expansion(ModuleWhereDefined,CurrentModule,Goal,ExpandedGoal,MetaVariables)
 
-'$meta_expansion0'(G,_Mod,MP,_HM, G1,_HVars) :-
-    var(G), !,
-    G1 = call(MP:G).
-'$meta_expansion0'(M:G,_Mod,_MP,_HM,G1,_HVars) :-
-    var(M), !,
-    G1 = '$execute_wo_mod'(G,M).
-% support for all/3
-'$meta_expansion0'(same(G, P),Mod,MP,HM, same(G1, P),HVars) :- !,
-    '$meta_expansion0'(G,Mod,MP,HM,G1,HVars).
-'$meta_expansion0'(G,Mod,MP,HM,M2:G2,HVars) :-
-    nonvar(G), G \= _:_,
-    '$module_expansion'(G,_,G1,MP,MP,HM,HVars), !,
-    strip_module(MP:G1, M2, G2).
-'$meta_expansion0'(G,Mod,MP,HM,M1:G1,HVars) :-
-    strip_module(MP:G,M1,G1).
 
-
-'$meta_expansion'(G,Mod,MP,HM,G1,HVars) :-
+'$meta_expansion'(G, HM, BM, SM, G1,HVars) :-
 	functor(G,F,N),
-	'$meta_predicate'(F,Mod,N,D), !, % we're in an argument
-%	format(user_error,'[ ~w ',[G]),
+	'$meta_predicate'(F,BM,N,D), !, % we're in an argument
+%	format(user_error,'[ ~w (~a, ~a, ~a)',[G, HM, BM, SM]),
 	functor(G1,F,N),
-	'$meta_expansion_loop'(N, D, G, G1, HVars, Mod, MP, HM).
-%	format(user_error,' gives ~w]`n',[G1]).
+	'$meta_expansion_loop'(N, D, G, G1, HVars, HM, BM, SM).
+%	format(user_error,' gives ~w]~n',[G1]).
+
 
 % expand argument
 '$meta_expansion_loop'(0,_,_,_,_,_,_,_) :- !.
-'$meta_expansion_loop'(I,D,G,NG,HVars,CurMod,M,HM) :- 
-	arg(I,D,X), (X==':' -> true ; integer(X)),
+'$meta_expansion_loop'(I,D,G,NG,HVars, HM, BM, SM) :- 
+	arg(I,D,X), 
+	(X==':' -> true ; integer(X)),
 	arg(I,G,A), 
 	'$should_expand'(A,HVars),
 	!,
 	( X ==0 ->
-	      '$meta_expansion0'(A,CurMod,M,HM,NA,HVars)
+	  '$values'('$c_arith',Old, false),
+	  '$meta_expansion0'(A, HM, BM, SM, NA, HVars),
+	  '$values'('$c_arith', _False, Old)
 	  ;
-	      NA = M:A
+	  NA = SM:A
 	),
 	arg(I,NG,NA),
 	I1 is I-1,
-	'$meta_expansion_loop'(I1, D, G, NG, HVars, CurMod, M, HM).
-'$meta_expansion_loop'(I, D, G, NG, HVars, CurMod, M, HM) :- 
+	'$meta_expansion_loop'(I1, D, G, NG, HVars, HM, BM, SM).
+'$meta_expansion_loop'(I, D, G, NG, HVars, HM, BM, SM) :-
 	arg(I,G,A),
 	arg(I,NG,A),
 	I1 is I-1,
-	'$meta_expansion_loop'(I1, D, G, NG, HVars, CurMod, M, HM).
+	'$meta_expansion_loop'(I1, D, G, NG, HVars, HM, BM, SM).
+
+'$meta_expansion0'(G, _HM, _BM, SM, SM:G, _HVars) :-
+    var(G), !.
+'$meta_expansion0'(M:G, _HM, _BM, _SM, G1, _HVars) :-
+    var(M), !,
+    G1 = '$execute_wo_mod'(G,M).
+% support for all/3
+'$meta_expansion0'(same(G, P), HM, BM, SM, same(G1, P),HVars) :- !,
+    '$meta_expansion0'(G, HM, BM, SM, G1,HVars).
+'$meta_expansion0'(G, _HM, _BM, SM, M1:G1,_HVars) :-
+    strip_module(SM:G,M1,G1).
+
 
 % check if an argument should be expanded
 '$should_expand'(V,HVars) :- var(V), !, '$not_in_vars'(V,HVars).
@@ -532,19 +1018,41 @@ expand_goal(G, G).
 '$not_in_vars'(_,[]).
 '$not_in_vars'(V,[X|L]) :- X\==V, '$not_in_vars'(V,L).
 
-current_module(Mod) :-
-	'$all_current_modules'(Mod),
-	\+ '$system_module'(Mod).
+/*
+ \pred module_transparent( + _Preds_ ) is directive
+   _Preds_ is a list of predicates that can access the calling context.
 
-current_module(Mod,TFN) :-
-	'$all_current_modules'(Mod),
-	( recorded('$module','$module'(TFN,Mod,_Publics, _),_) -> true ; TFN = user ).
+ _Preds_ is a comma separated sequence of name/arity predicate
+indicators (like in dynamic/1). Each goal associated with a
+transparent declared predicate will inherit the context module from
+its parent goal. 
 
-source_module(Mod) :-
-	'$current_module'(Mod).
+*/
+:- dynamic('$module_transparent'/4).
+
+'$module_transparent'((P,Ps), M) :- !, 
+	'$module_transparent'(P, M),
+	'$module_transparent'(Ps, M).
+'$module_transparent'(M:D, _) :- !,
+	'$module_transparent'(D, M).
+'$module_transparent'(F/N, M) :-
+	'$module_transparent'(F,M,N,_), !.
+'$module_transparent'(F/N, M) :-
+	functor(P,F,N),
+	asserta(prolog:'$module_transparent'(F,M,N,P)),
+	'$flags'(P, M, Fl, Fl),
+	NFlags is Fl \/ 0x200004,
+	'$flags'(P, M, Fl, NFlags).
+
+%% handle module transparent predicates by defining a 
+%% new context module.
+'$is_mt'(M, H, _, B, (context_module(CM),B), CM) :-
+	'$module_transparent'(_, M, _, H), !.
+'$is_mt'(_M, _H, CM, B, B, CM).
 
 % comma has its own problems.
-:- '$install_meta_predicate'((0,0), prolog).
+:- '$install_meta_predicate'(','(0,0), prolog).
+
 
 :- meta_predicate
 	abolish(:),
@@ -606,10 +1114,10 @@ source_module(Mod) :-
 	if(0,0,0),
 	ignore(0),
 	incore(0),
-	listing(:),
 	multifile(:),
 	nospy(:),
         not(0),
+        notrace(0),
         once(0),
         phrase(2,?),
         phrase(2,?,+),
@@ -627,16 +1135,16 @@ source_module(Mod) :-
 	setup_call_catcher_cleanup(0,0,?,0),
 	spy(:),
 	stash_predicate(:),
-	unknown(+,:),
 	use_module(:),
 	use_module(:,?),
 	use_module(?,:,?),
 	when(+,0),
 	with_mutex(+,0),
 	with_output_to(?,0),
-	(0 -> 0),
-	(0 *-> 0),
-	(0 ; 0),
+	'->'(0 , 0),
+	'*->'(0 , 0),
+	';'(0 , 0),
+	','(0 , 0),
 	^(+,0),
 	{}(0,?,?),
 	','(2,2,?,?),
@@ -644,13 +1152,52 @@ source_module(Mod) :-
 	'|'(2,2,?,?),
 	->(2,2,?,?),
 	\+(2,?,?),
-	\+ 0 .
+	\+( 0 ).
 
-%
-% get rid of a module and of all predicates included in the module.
-%
+/** 
+
+@}
+
+@{
+ \defgroup YAPDynamicYAPModules Dynamic Modules
+ \ingroup YAPModules
+
+  YAP (in the footsteps of SWI-Prolog) allows to create modules that
+  are not bound to files. One application is in Inductive Logic Programming,
+  where dynamic modules can be used to represent training examples. YAP now include 
+  built-ins to create a module. manipulate its interface, and eventually abolish the 
+  module, releasing all the data therein.
+
+*/
+
+/**
+
+  \pred declare_module(+Module, +Super, +File, +Line, +Redefine) is det
+   declare explicitely a module
+
+Start a new (source-)module _Module_ that inherits all exports from
+_Super_. The module is as if defined in file _File_ and _Line_ and if _Redefine_
+holds true may
+be associated to a new file.
+
+\param[in]	_Module_ is the name of the module to declare
+\param[in]	_MSuper_ is the name of the context module. Use `prolog`or `system`
+                if you do not need a context.
+\param[in]	_File_ is the canonical name of the file from which the module is loaded
+\param[in]  Line is the line-number of the :- module/2 directive.
+\param[in]	 If _Redefine_ `true`, allow associating the module to a new file
+*/
+
+'$declare_module'(Name, _Super, Context, _File, _Line) :-
+	add_import_module(Name, Context, start).
+
+
+/**
+ \pred abolish_module( + Mod) is det
+ get rid of a module and of all predicates included in the module.
+*/
 abolish_module(Mod) :-
-	recorded('$module','$module'(_,Mod,_,_),R), erase(R),
+	recorded('$module','$module'(_,Mod,_,_,_),R), erase(R),
 	fail.
 abolish_module(Mod) :-
 	recorded('$import','$import'(Mod,_,_,_,_,_),R), erase(R),
@@ -672,28 +1219,28 @@ export(Resource) :-
 	export_resource(Resource).
 
 export_resource(Resource) :-
-	var(Resource),
+	var(Resource), !,
 	'$do_error'(instantiation_error,export(Resource)).	
 export_resource(P) :-
 	P = F/N, atom(F), number(N), N >= 0, !,
 	'$current_module'(Mod), 
-	(	recorded('$module','$module'(File,Mod,ExportedPreds,Line),R) ->
+	(	recorded('$module','$module'(File,Mod,SourceF,ExportedPreds,Line),R) ->
 		erase(R), 
-		recorda('$module','$module'(File,Mod,[P|ExportedPreds],Line),_)
+		recorda('$module','$module'(File,Mod,SourceF,[P|ExportedPreds],Line),_)
 	;	prolog_load_context(file, File) ->
-		recorda('$module','$module'(File,Mod,[P],Line),_)
-	;	recorda('$module','$module'(user_input,Mod,[P],1),_)
+		recorda('$module','$module'(File,Mod,SourceF,[P],Line),_)
+	;	recorda('$module','$module'(user_input,Mod,user_input,[P],1),_)
 	).
 export_resource(P0) :-
 	P0 = F//N, atom(F), number(N), N >= 0, !,
 	N1 is N+2, P = F/N1,
 	'$current_module'(Mod), 
-	(	recorded('$module','$module'(File,Mod,ExportedPreds,Line),R) ->
+	(	recorded('$module','$module'(File,Mod,SourceF,ExportedPreds,Line),R) ->
 		erase(R), 
-		recorda('$module','$module'(File,Mod,[P|ExportedPreds],Line ),_)
+		recorda('$module','$module'(File,Mod,SourceF,[P|ExportedPreds],Line ),_)
 	;	prolog_load_context(file, File) ->
-		recorda('$module','$module'(File,Mod,[P],Line),_)
-	;	recorda('$module','$module'(user_input,Mod,[P],1),_)
+		recorda('$module','$module'(File,Mod,SourceF,[P],Line),_)
+	;	recorda('$module','$module'(user_input,Mod,user_input,[P],1),_)
 	).
 export_resource(op(Prio,Assoc,Name)) :- !,
 	op(Prio,Assoc,prolog:Name).
@@ -701,7 +1248,7 @@ export_resource(Resource) :-
 	'$do_error'(type_error(predicate_indicator,Resource),export(Resource)).
 	
 export_list(Module, List) :-
-	recorded('$module','$module'(_,Module,List,_),_).
+	recorded('$module','$module'(_,Module,_,List,_),_).
 
 '$convert_for_export'(all, Exports, _Module, _ContextModule, Tab, MyExports, _) :-
 	'$simple_conversion'(Exports, Tab, MyExports).
@@ -721,7 +1268,7 @@ export_list(Module, List) :-
 	'$simple_conversion'(Exports, Tab, E).
 '$simple_conversion'([F/N as NF|Exports], [F/N-NF/N|Tab], [NF/N|E]) :-
 	'$simple_conversion'(Exports, Tab, E).
-'$simple_conversion'([F//N as BF|Exports], [F/N2-NF/N2|Tab], [NF/N2|E]) :-
+'$simple_conversion'([F//N as NF|Exports], [F/N2-NF/N2|Tab], [NF/N2|E]) :-
 	N2 is N+1,
 	'$simple_conversion'(Exports, Tab, E).
 '$simple_conversion'([op(Prio,Assoc,Name)|Exports], [op(Prio,Assoc,Name)|Tab], [op(Prio,Assoc,Name)|E]) :-
@@ -731,44 +1278,50 @@ export_list(Module, List) :-
 '$clean_conversion'([(N1/A1 as N2)|Ps], List, Module, ContextModule, [N1/A1-N2/A1|Tab], [N2/A1|MyExports], Goal) :- !,
 	( lists:memberchk(N1/A1, List)
 	->
-	  '$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal)
+	  true
 	;
-	  '$bad_export'((N1/A1 as A2), Module, ContextModule)
-	).	
+	  '$bad_export'((N1/A1 as N2), Module, ContextModule)
+	),
+	'$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal).	
 '$clean_conversion'([N1/A1|Ps], List, Module, ContextModule, [N1/A1-N1/A1|Tab], [N1/A1|MyExports], Goal) :- !,
 	(
 	 lists:memberchk(N1/A1, List)
 	->
-	 '$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal)
+	   true
 	;
 	  '$bad_export'(N1/A1, Module, ContextModule)
-	).
+	),
+	'$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal).
 '$clean_conversion'([N1//A1|Ps], List, Module, ContextModule, [N1/A2-N1/A2|Tab], [N1/A2|MyExports], Goal) :- !,
 	A2 is A1+2,
 	(
 	  lists:memberchk(N1/A2, List)
 	->
-	  '$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal)
+	  true
 	;
 	  '$bad_export'(N1//A1, Module, ContextModule)
-	).
+
+	),
+	'$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal).
 '$clean_conversion'([N1//A1 as N2|Ps], List, Module, ContextModule, [N2/A2-N1/A2|Tab], [N2/A2|MyExports], Goal) :- !,
 	A2 is A1+2,
 	(
 	  lists:memberchk(N2/A2, List)
 	->
-	  '$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal)
+	  true
 	;
 	  '$bad_export'((N1//A1 as A2), Module, ContextModule)
-	).
+	),
+	'$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal).
 '$clean_conversion'([op(Prio,Assoc,Name)|Ps], List, Module, ContextModule, [op(Prio,Assoc,Name)|Tab], [op(Prio,Assoc,Name)|MyExports], Goal) :- !,
 	(
 	 lists:memberchk(op(Prio,Assoc,Name), List)
 	->
-	 '$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal)
+	 true
 	;
-	  '$bad_export'(op(Prio,Assoc,Name), Module, ContextModule)
-	).
+	 '$bad_export'(op(Prio,Assoc,Name), Module, ContextModule)
+	),
+	'$clean_conversion'(Ps, List, Module, ContextModule, Tab, MyExports, Goal).
 '$clean_conversion'([P|_], _List, _, _, _, _, Goal) :-
 	'$do_error'(domain_error(module_export_predicates,P), Goal).
 
@@ -814,7 +1367,7 @@ export_list(Module, List) :-
 '$clean_conversion'([P|_], _List, _, _, _, Goal) :-
 	'$do_error'(domain_error(module_export_predicates,P), Goal).
 
-	
+
 '$add_to_imports'([], _, _).
 % no need to import from the actual module
 '$add_to_imports'([T|Tab], Module, ContextModule) :- 
@@ -825,7 +1378,7 @@ export_list(Module, List) :-
 	op(Prio,Assoc,ContextMod:Name).
 '$do_import'(N0/K0-N0/K0, Mod, Mod) :- !.
 '$do_import'(_N/K-N1/K, _Mod, ContextMod) :-
-       recorded('$module','$module'(_F, ContextMod, MyExports,_),_),
+       recorded('$module','$module'(_F, ContextMod, _SourceF, MyExports,_),_),
        once(lists:member(N1/K, MyExports)),
        functor(S, N1, K),
        %  reexport predicates if they are undefined in the current module.
@@ -833,7 +1386,7 @@ export_list(Module, List) :-
 '$do_import'( N/K-N1/K, Mod, ContextMod) :-
 	functor(G,N,K),
 	'$follow_import_chain'(Mod,G,M0,G0),
-	G0=..[N0|Args],
+	G0=..[_N0|Args],
 	G1=..[N1|Args],
 	( '$check_import'(M0,ContextMod,N1,K) ->
 	  ( ContextMod = user ->
@@ -856,31 +1409,42 @@ export_list(Module, List) :-
 	% dereference MI to M1, in order to find who 
 	% is actually generating
 	( '$module_produced by'(M1, MI,  N, K) -> true ; MI = M1 ),
-	( '$module_produced by'(M2, Mod, N, K) -> true ;  M = M2 ),
+	( '$module_produced by'(M2, Mod, N, K) -> true ; Mod = M2 ),
 	M2 \= M1,  !,
 	b_getval('$lf_status', TOpts),
 	'$lf_opt'(redefine_module, TOpts, Action),
-	'$redefine_action'(Action, M1, M2, M, N/K).
+	'$redefine_action'(Action, M1, M2, Mod, ContextM, N/K).
 '$check_import'(_,_,_,_).
 
-'$redefine_action'(ask, M1, M2, M, N/K) :-
+'$redefine_action'(ask, M1, M2, M, _, N/K) :-
 	stream_property(user_input,tty(true)), !,
 	format(user_error,'NAME CLASH: ~w was already imported to module ~w;~n',[M1:N/K,M2]),
 	format(user_error,'            Do you want to import it from ~w ? [y, n, e or h] ',M),
 	'$mod_scan'(C),
-	( C =:= 0'e -> halt(1) ;
-	  C =:= 0'y ).  
-'$redefine_action'(true, M1, _, _, _) :- !,
-	recorded('$module','$module'(F, M1, _MyExports,_Line),_),
+	( C == e -> halt(1) ;
+	  C == y ).  
+'$redefine_action'(true, M1, _, _, _, _) :- !,
+	recorded('$module','$module'(F, M1, _, _MyExports,_Line),_),
 	unload_file(F).
-'$redefine_action'(false, M1,M2, M, N/K) :-
-	'$do_error'(permission_error(import,M1:N/K,redefined,M2),module(M)).
+'$redefine_action'(false, M1, M2, _M, ContextM, N/K) :-
+	recorded('$module','$module'(F, ContextM, _, _MyExports,_Line),_),
+	'$current_module'(_, M2),
+	'$do_error'(permission_error(import,M1:N/K,redefined,M2),F).
+
+'$mod_scan'(C) :-
+	get_char(C),
+	'$skipeol'(C),
+	(C == y -> true; C == n).
 
 % I assume the clause has been processed, so the
 % var case is long gone! Yes :)
 '$clean_cuts'(G,(yap_hacks:current_choicepoint(DCP),NG)) :-
 	'$conj_has_cuts'(G,DCP,NG,OK), OK == ok, !.
 '$clean_cuts'(G,G).
+
+'$clean_cuts'(G,DCP,NG) :-
+	'$conj_has_cuts'(G,DCP,NG,OK), OK == ok, !.
+'$clean_cuts'(G,_,G).
 
 '$conj_has_cuts'(V,_,V, _) :- var(V), !.
 '$conj_has_cuts'(!,DCP,'$$cut_by'(DCP), ok) :- !. 
@@ -902,6 +1466,16 @@ export_list(Module, List) :-
 	'$conj_has_cuts'(G3, DCP, NG3, OK).
 '$conj_has_cuts'(G,_,G, _).
 
+/**
+    set_base_module( +ExportingModule ) is det
+All exported predicates from _ExportingModule_ are automatically available to the 
+current source  module.
+
+This built-in was introduced by SWI-Prolog. In YAP, by default, modules only
+inherit from `prolog`. This extension allows predicates in the current
+module (see module/2 and module/1) to inherit from `user` or other modules.
+
+*/
 set_base_module(ExportingModule) :-
 	var(ExportingModule),
 	'$do_error'(instantiation_error,set_base_module(ExportingModule)).
@@ -913,6 +1487,16 @@ set_base_module(ExportingModule) :-
 set_base_module(ExportingModule) :-
 	'$do_error'(type_error(atom,ExportingModule),set_base_module(ExportingModule)).
 
+/**
+    import_module( +ImportingModule, +ExportingModule ) is det
+All exported predicates from _ExportingModule_ are automatically available to the 
+ source  module _ImportModule_.
+
+This innovation was introduced by SWI-Prolog. By default, modules only
+inherit from `prolog`. This extension allows predicates in any module
+to inherit from `user`oe other modules.
+
+*/
 import_module(Mod, ImportModule) :-
 	var(Mod),
 	'$do_error'(instantiation_error,import_module(Mod, ImportModule)).
@@ -922,6 +1506,17 @@ import_module(Mod, ImportModule) :-
 import_module(Mod, EM) :-
 	'$do_error'(type_error(atom,Mod),import_module(Mod, EM)).
 
+
+/** add_import_module( + _Module_, + _ImportModule_ , +_Pos_) is det
+Add all exports in _ImportModule_ as available to _Module_.
+
+    
+All exported predicates from _ExportModule_ are made available to the 
+ source  module _ImportModule_. If _Position_ is bound to `start` the 
+ module _ImportModule_ is tried first, if _Position_ is bound to `end`, 
+ the module is consulted last.
+
+*/
 add_import_module(Mod, ImportModule, Pos) :-
 	var(Mod),
 	'$do_error'(instantiation_error,add_import_module(Mod, ImportModule, Pos)).
@@ -942,6 +1537,14 @@ add_import_module(Mod, ImportModule, Pos) :-
 add_import_module(Mod, ImportModule, Pos) :-
 	'$do_error'(domain_error(start_end,Pos),add_import_module(Mod, ImportModule, Pos)).
 
+/** delete_import_module( + _ExportModule_, + _ImportModule_ ) is det
+Exports in _ImportModule_ are no longer available to _Module_.
+
+    
+All exported predicates from _ExportModule_ are discarded from the 
+ ones used vy the source  module _ImportModule_.
+
+*/
 delete_import_module(Mod, ImportModule) :-
 	var(Mod),
 	'$do_error'(instantiation_error,delete_import_module(Mod, ImportModule)).
@@ -964,25 +1567,45 @@ delete_import_module(Mod, ImportModule) :-
 '$set_source_module'(Source0, SourceF) :-
 	current_module(Source0, SourceF).
 
-/** '$declare_module'(+Module, +Super, +File, +Line, +Redefine) is det.
+/** module_property( + _Module_, ? _Property_ ) is nondet
+Enumerate non-deterministically the main properties of _Module_ .
 
-Start a new (source-)module
+Reports the following properties of _Module_:
 
-@param	Module is the name of the module to declare
-@param	File is the canonical name of the file from which the module
-	is loaded
-@param  Line is the line-number of the :- module/2 directive.
-@param	Redefine If =true=, allow associating the module to a new file
+  + `class`( ?_Class_ ): whether it is a `system`, `library`, or `user` module.
+
+  + `line_count`(?_Ls_): number of lines in source file.
+
+  + `file`(?_F_): source file for _Module_.
+
+  + `exports`(-Es): list of all predicate symbols and
+   operator symbols exported or re-exported by this module.
+
 */
-'$declare_module'(Name, _Test, Context, _File, _Line) :-
-	add_import_module(Name, Context, start).
-
+module_property(Mod, class(L)) :-
+	'$module_class'(Mod, L).
 module_property(Mod, line_count(L)) :-
-	recorded('$module','$module'(_F,Mod,_,L),_).
+	recorded('$module','$module'(_F,Mod,_,_,L),_).
 module_property(Mod, file(F)) :-
-	recorded('$module','$module'(F,Mod,_,_),_).
+	recorded('$module','$module'(F,Mod,_,_,_),_).
 module_property(Mod, exports(Es)) :-
-	recorded('$module','$module'(_,Mod,Es,_),_).
+	recorded('$module','$module'(_,Mod,_,Es,_),_).
+
+'$module_class'(Mod, system) :- '$system_module'( Mod ).
+'$module_class'(Mod, library) :- '$library_module'( Mod ).
+'$module_class'(Mod, user) :- '$user_module'( Mod ).
+'$module_class'(_, temporary) :- fail.
+'$module_class'(_, test) :- fail.
+'$module_class'(_, development) :- fail.
+
+'$library_module'(M1) :-
+	recorded('$module','$module'(F, M1, _, _MyExports,_Line),_),
+	user:library_directory(D),
+	sub_atom(F, 0, _, _, D).
+
+'$user_module'( Mod ) :- 
+    \+ '$library_module'( Mod),
+    \+ '$system_module'( Mod).
 
 ls_imports :-
 	recorded('$import','$import'(M0,M,G0,G,_N,_K),_R),
@@ -992,3 +1615,54 @@ ls_imports :-
 ls_imports.
 
 
+'$system_module'('$swi').
+'$system_module'('$win_menu').
+'$system_module'('prolog').
+'$system_module'('system').
+'$system_module'('$attributes').
+
+unload_module(Mod) :-
+    clause( '$meta_predicate'(_F,Mod,_N,_P), _, R),
+    erase(R),
+    fail.
+unload_module(Mod) :-
+    recorded('$multifile_defs','$defined'(_FileName,_Name,_Arity,Mod), R),
+    erase(R),
+    fail.
+unload_module(Mod) :-
+    recorded( '$foreign', Mod:_Foreign, R),
+    erase(R),
+    fail.
+% remove imported modules
+unload_module(Mod) :-
+    setof( M, recorded('$import',_G0^_G^_N^_K^_R^'$import'(Mod,M,_G0,_G,_N,_K),_R), Ms),
+    recorded('$module','$module'( _, Mod, _, _, Exports), _),
+    lists:member(M, Ms),
+    current_op(X, Y, M:Op),
+    lists:member( op(X, Y, Op), Exports ),
+    op(X, 0, M:Op),
+    fail.
+unload_module(Mod) :-
+    recorded('$module','$module'( _, Mod, _, _, Exports), _),
+    lists:member( op(X, _Y, Op), Exports ),
+    op(X, 0, Mod:Op),
+    fail.
+unload_module(Mod) :-
+    current_predicate(Mod:P),
+    abolish(P),
+    fail.
+unload_module(Mod) :-
+    recorded('$import','$import'(Mod,_M,_G0,_G,_N,_K),R),
+    erase(R),
+    fail.
+unload_module(Mod) :-
+    recorded('$module','$module'( _, Mod, _, _, _), R),
+    erase(R),
+    fail.
+/**
+
+@}
+
+@}
+
+**/

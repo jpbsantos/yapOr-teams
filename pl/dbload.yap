@@ -18,6 +18,13 @@
 :- module('$db_load',
 	  []).
 
+:- use_system_module( '$_boot', ['$$compile'/4]).
+
+:- use_system_module( '$_errors', ['$do_error'/2]).
+
+:- use_system_module( attributes, [get_module_atts/2,
+        put_module_atts/2]).
+
 :- dynamic dbloading/6, dbprocess/2.
 
 dbload_from_stream(R, M0, Type) :-
@@ -28,7 +35,7 @@ dbload_from_stream(R, M0, Type) :-
 	    fail 
 	).
 
-close_dbload(R, exo) :-
+close_dbload(_R, exo) :-
 	retract(dbloading(Na,Arity,M,T,NaAr,_)),
 	nb_getval(NaAr,Size),
 	exo_db_get_space(T, M, Size, Handle),
@@ -37,9 +44,9 @@ close_dbload(R, exo) :-
 	fail.
 close_dbload(R, exo) :-
 	seek(R, 0, bof, _),
-	exodb_add_facts(R, M),
+	exodb_add_facts(R, _M),
 	fail.
-close_dbload(R, mega) :-
+close_dbload(_R, mega) :-
 	retract(dbloading(Na,Arity,M,T,NaAr,_)),
 	nb_getval(NaAr,Size),
 	dbload_get_space(T, M, Size, Handle),
@@ -48,7 +55,7 @@ close_dbload(R, mega) :-
 	fail.
 close_dbload(R, mega) :-
 	seek(R, 0, bof, _),
-	dbload_add_facts(R, M),
+	dbload_add_facts(R, _M),
 	fail.
 close_dbload(_, _) :- 
 	retractall(dbloading(_Na,_Arity,_M,_T,_NaAr,_Handle)),
@@ -80,7 +87,7 @@ dbload(F, _, G) :-
 	'$do_error'(type_error(atom,F),G).
 
 do_dbload(F0, M0, G) :-
-	'$full_filename'(F0,F,G),
+	'$full_filename'(F0, F, G),
 	assert(dbprocess(F, M0)),
 	open(F, read, R),
 	check_dbload_stream(R, M0),

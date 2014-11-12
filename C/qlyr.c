@@ -16,8 +16,8 @@
 *									 *
 *************************************************************************/
 
-#include <SWI-Stream.h>
 #include "absmi.h"
+#include <SWI-Stream.h>
 #include "Foreign.h"
 #include "alloc.h"
 #include "yapio.h"
@@ -44,7 +44,8 @@ typedef enum {
   BAD_ATOM = 8,
   MISMATCH = 9,
   INCONSISTENT_CPRED = 10,
-  BAD_READ = 11
+  BAD_READ = 11,
+  BAD_HEADER = 12
 } qlfr_err_t;
 
 static char *
@@ -77,7 +78,7 @@ static void
 QLYR_ERROR(qlfr_err_t my_err)
 {
   Yap_Error(SAVED_STATE_ERROR,TermNil,"error %s in saved state %s",GLOBAL_RestoreFile, qlyr_error[my_err]); 
-  exit(1);
+  Yap_exit(1);
 }
 
 static Atom
@@ -168,9 +169,12 @@ static PredEntry *
 LookupPredEntry(PredEntry *op)
 {
   CACHE_REGS
-  CELL hash = (CELL)(op) % LOCAL_ImportPredEntryHashTableSize;
+  CELL hash;
   import_pred_entry_hash_entry_t *p;
 
+  if (LOCAL_ImportPredEntryHashTableSize == 0)
+    return NULL;
+  hash = (CELL)(op) % LOCAL_ImportPredEntryHashTableSize;
   p = LOCAL_ImportPredEntryHashChain[hash];
   while (p) {
     if (p->oval == op) {
@@ -186,9 +190,12 @@ static void
 InsertPredEntry(PredEntry *op, PredEntry *pe)
 {
   CACHE_REGS
-  CELL hash = (CELL)(op) % LOCAL_ImportPredEntryHashTableSize;
+  CELL hash;
   import_pred_entry_hash_entry_t *p;
 
+  if (LOCAL_ImportPredEntryHashTableSize == 0)
+    return;
+  hash = (CELL)(op) % LOCAL_ImportPredEntryHashTableSize;
   p = LOCAL_ImportPredEntryHashChain[hash];
   while (p) {
     if (p->oval == op) {
@@ -270,9 +277,12 @@ static DBRef
 LookupDBRef(DBRef dbr, int inc_ref)
 {
   CACHE_REGS
-  CELL hash = (CELL)(dbr) % LOCAL_ImportDBRefHashTableSize;
+  CELL hash;
   import_dbref_hash_entry_t *p;
 
+  if (LOCAL_ImportDBRefHashTableSize == 0)
+    return NULL;
+  hash = (CELL)(dbr) % LOCAL_ImportDBRefHashTableSize;
   p = LOCAL_ImportDBRefHashChain[hash];
   while (p) {
     if (p->oval == dbr) {
@@ -291,9 +301,12 @@ static LogUpdClause *
 LookupMayFailDBRef(DBRef dbr)
 {
   CACHE_REGS
-  CELL hash = (CELL)(dbr) % LOCAL_ImportDBRefHashTableSize;
+  CELL hash;
   import_dbref_hash_entry_t *p;
 
+  if (LOCAL_ImportDBRefHashTableSize == 0)
+    return NULL;
+  hash = (CELL)(dbr) % LOCAL_ImportDBRefHashTableSize;
   p = LOCAL_ImportDBRefHashChain[hash];
   while (p) {
     if (p->oval == dbr) {
@@ -657,18 +670,18 @@ read_bits16(IOSTREAM *stream)
 }
 
 static UInt
-read_uint(IOSTREAM *stream)
+read_UInt(IOSTREAM *stream)
 {
   UInt v;
   read_bytes(stream, &v, sizeof(UInt));
   return v;
 }
 
-static int
-read_int(IOSTREAM *stream)
+static Int
+read_Int(IOSTREAM *stream)
 {
-  int v;
-  read_bytes(stream, &v, sizeof(int));
+  Int v;
+  read_bytes(stream, &v, sizeof(Int));
   return v;
 }
 
@@ -679,11 +692,56 @@ read_tag(IOSTREAM *stream)
   return ch;
 }
 
-static void
-read_header(IOSTREAM *stream)
+static bool
+checkChars(IOSTREAM *stream, char s[])
 {
-  int ch;
+  int ch, c;
+  char *p = s;
+  
+  while ((ch = *p++)) {
+    if ((c  = read_byte(stream)) != ch ) {
+      return false;
+    }
+  }
+  return TRUE;
+}
+
+static Atom
+get_header(IOSTREAM *stream)
+{
+  char s[256], *p = s, ch;
+  Atom at;
+
+  if (!checkChars( stream, "#!/bin/sh\nexec_dir=${YAPBINDIR:-" ))
+    return NIL;
+  while ((ch = read_byte(stream)) != '\n');
+  if (!checkChars( stream, "exec $exec_dir/yap $0 \"$@\"\nsaved " ))
+    return NIL;
+  while ((ch = read_byte(stream)) != ',')
+    *p++ = ch;
+  *p++ = '\0';
+  at = Yap_LookupAtom( s );
   while ((ch = read_byte(stream)));
+  return at;
+}
+
+static Int
+p_get_header( USES_REGS1 )
+{
+  IOSTREAM *stream;
+  Term t1 = Deref(ARG1);
+  Atom at;
+
+  if (IsVarTerm(t1)) {
+    Yap_Error(INSTANTIATION_ERROR,t1,"read_program/3");
+    return FALSE;
+  }
+  if (!(stream = Yap_GetInputStream(AtomOfTerm(t1))) ) {
+    return FALSE;
+  }
+  if ((at = get_header( stream )) == NIL)
+    return FALSE;
+  return Yap_unify( ARG2, MkAtomTerm( at ) );
 }
 
 static void
@@ -692,18 +750,18 @@ ReadHash(IOSTREAM *stream)
   CACHE_REGS
   UInt i;
   RCHECK(read_tag(stream) == QLY_START_X);
-  LOCAL_XDiff = (char *)(&ARG1) - (char *)read_uint(stream);
+  LOCAL_XDiff = (char *)(&ARG1) - (char *)read_UInt(stream);
   RCHECK(read_tag(stream) == QLY_START_OPCODES);
-  RCHECK(read_int(stream) == _std_top);
+  RCHECK(read_Int(stream) == _std_top);
   for (i= 0; i <= _std_top; i++) {
-    InsertOPCODE((OPCODE)read_uint(stream), i, Yap_opcode(i));
+    InsertOPCODE((OPCODE)read_UInt(stream), i, Yap_opcode(i));
   }
   RCHECK(read_tag(stream) == QLY_START_ATOMS);
-  LOCAL_ImportAtomHashTableNum = read_uint(stream);
+  LOCAL_ImportAtomHashTableNum = read_UInt(stream);
   LOCAL_ImportAtomHashTableSize = LOCAL_ImportAtomHashTableNum*2;
   LOCAL_ImportAtomHashChain = (import_atom_hash_entry_t **)calloc(LOCAL_ImportAtomHashTableSize, sizeof(import_atom_hash_entry_t *));
   for (i = 0; i < LOCAL_ImportAtomHashTableNum; i++) {
-    Atom oat = (Atom)read_uint(stream);
+    Atom oat = (Atom)read_UInt(stream);
     Atom at;
     qlf_tag_t tg = read_tag(stream);
       
@@ -711,7 +769,7 @@ ReadHash(IOSTREAM *stream)
       wchar_t *rep = (wchar_t *)AllocTempSpace();
       UInt len;
 
-      len = read_uint(stream);
+      len = read_UInt(stream);
       if (!EnoughTempSpace(len)) QLYR_ERROR(OUT_OF_TEMP_SPACE);
       read_bytes(stream, rep, (len+1)*sizeof(wchar_t));
       while (!(at = Yap_LookupWideAtom(rep))) {
@@ -724,7 +782,7 @@ ReadHash(IOSTREAM *stream)
       char *rep = (char *)AllocTempSpace();
       UInt len;
 
-      len = read_uint(stream);
+      len = read_UInt(stream);
       if (!EnoughTempSpace(len)) QLYR_ERROR(OUT_OF_TEMP_SPACE);
       read_bytes(stream, rep, (len+1)*sizeof(char));
       while (!(at = Yap_FullLookupAtom(rep))) {
@@ -741,13 +799,13 @@ ReadHash(IOSTREAM *stream)
   }
   /* functors */
   RCHECK(read_tag(stream) == QLY_START_FUNCTORS);
-  LOCAL_ImportFunctorHashTableNum = read_uint(stream);
+  LOCAL_ImportFunctorHashTableNum = read_UInt(stream);
   LOCAL_ImportFunctorHashTableSize = 2*LOCAL_ImportFunctorHashTableNum;
   LOCAL_ImportFunctorHashChain = (import_functor_hash_entry_t **)calloc(LOCAL_ImportFunctorHashTableSize, sizeof(import_functor_hash_entry_t *));
   for (i = 0; i < LOCAL_ImportFunctorHashTableNum; i++) {
-    Functor of = (Functor)read_uint(stream);
-    UInt arity = read_uint(stream);
-    Atom oat = (Atom)read_uint(stream);
+    Functor of = (Functor)read_UInt(stream);
+    UInt arity = read_UInt(stream);
+    Atom oat = (Atom)read_UInt(stream);
     Atom at = AtomAdjust(oat);
     Functor f;
     while (!(f = Yap_MkFunctor(at, arity))) {
@@ -758,13 +816,13 @@ ReadHash(IOSTREAM *stream)
     InsertFunctor(of, f);
   }
   RCHECK(read_tag(stream) == QLY_START_PRED_ENTRIES);
-  LOCAL_ImportPredEntryHashTableNum = read_uint(stream);
+  LOCAL_ImportPredEntryHashTableNum = read_UInt(stream);
   LOCAL_ImportPredEntryHashTableSize = 2*LOCAL_ImportPredEntryHashTableNum;
   LOCAL_ImportPredEntryHashChain = (import_pred_entry_hash_entry_t **)calloc( LOCAL_ImportPredEntryHashTableSize, sizeof(import_pred_entry_hash_entry_t *));
   for (i = 0; i < LOCAL_ImportPredEntryHashTableNum; i++) {
-    PredEntry *ope = (PredEntry *)read_uint(stream), *pe;
-    UInt arity = read_uint(stream);
-    Atom omod = (Atom)read_uint(stream);
+    PredEntry *ope = (PredEntry *)read_UInt(stream), *pe;
+    UInt arity = read_UInt(stream);
+    Atom omod = (Atom)read_UInt(stream);
     Term mod;
     
     if (omod) {
@@ -776,7 +834,7 @@ ReadHash(IOSTREAM *stream)
 
     if (mod != IDB_MODULE) {
       if (arity) {
-	Functor of = (Functor)read_uint(stream);
+	Functor of = (Functor)read_UInt(stream);
 	Functor f = LookupFunctor(of);
 	while(!(pe = RepPredProp(PredPropByFuncAndMod(f,mod)))) {
 	  if (!Yap_growheap(FALSE, 0, NULL)) {
@@ -784,35 +842,42 @@ ReadHash(IOSTREAM *stream)
 	  }
 	}
       } else {
-	Atom oa = (Atom)read_uint(stream);
+	Atom oa = (Atom)read_UInt(stream);
 	Atom a = LookupAtom(oa);
 	pe = RepPredProp(PredPropByAtomAndMod(a,mod));
       }
     } else {
+      /* IDB */
       if (arity == (UInt)-1) {
-	UInt i = read_uint(stream);
+	UInt i = read_UInt(stream);
 	pe = Yap_FindLUIntKey(i);
       }	else if (arity == (UInt)(-2)) {
-	Atom oa = (Atom)read_uint(stream);
+	Atom oa = (Atom)read_UInt(stream);
 	Atom a = LookupAtom(oa);
 	pe = RepPredProp(PredPropByAtomAndMod(a,mod));
+	pe->PredFlags |= AtomDBPredFlag;
       } else {
-	Functor of = (Functor)read_uint(stream);
+	Functor of = (Functor)read_UInt(stream);
 	Functor f = LookupFunctor(of);
 	pe = RepPredProp(PredPropByFuncAndMod(f,mod));
       }
+      pe->PredFlags |= LogUpdatePredFlag;
       pe->ArityOfPE = 3;
+      if (pe->OpcodeOfPred == UNDEF_OPCODE) {
+	pe->OpcodeOfPred = Yap_opcode(_op_fail);
+	pe->cs.p_code.TrueCodeOfPred = pe->CodeOfPred = FAILCODE;
+      }
     }
     InsertPredEntry(ope, pe);
   }
   RCHECK(read_tag(stream) == QLY_START_DBREFS);
-  LOCAL_ImportDBRefHashTableNum = read_uint(stream);
-  LOCAL_ImportDBRefHashTableSize = 2*LOCAL_ImportDBRefHashTableNum;
+  LOCAL_ImportDBRefHashTableNum = read_UInt(stream);
+  LOCAL_ImportDBRefHashTableSize = 2*LOCAL_ImportDBRefHashTableNum+17;
   LOCAL_ImportDBRefHashChain = (import_dbref_hash_entry_t **)calloc(LOCAL_ImportDBRefHashTableSize, sizeof(import_dbref_hash_entry_t *));
   for (i = 0; i < LOCAL_ImportDBRefHashTableNum; i++) {
-    LogUpdClause *ocl = (LogUpdClause *)read_uint(stream);
-    UInt sz = read_uint(stream);
-    UInt nrefs = read_uint(stream);
+    LogUpdClause *ocl = (LogUpdClause *)read_UInt(stream);
+    UInt sz = read_UInt(stream);
+    UInt nrefs = read_UInt(stream);
     LogUpdClause *ncl = (LogUpdClause *)Yap_AlwaysAllocCodeSpace(sz);
     if (!ncl) {
       QLYR_ERROR(OUT_OF_CODE_SPACE);	
@@ -822,7 +887,7 @@ ReadHash(IOSTREAM *stream)
     InsertDBRef((DBRef)ocl,(DBRef)ncl);
   }
   RCHECK(read_tag(stream) == QLY_FAILCODE);
-  LOCAL_ImportFAILCODE = (yamop *)read_uint(stream);
+  LOCAL_ImportFAILCODE = (yamop *)read_UInt(stream);
 }
 
 static void
@@ -843,8 +908,8 @@ read_clauses(IOSTREAM *stream, PredEntry *pp, UInt nclauses, UInt flags) {
       return;
     }
     while ((read_tag(stream) == QLY_START_LU_CLAUSE)) {
-      char *base = (void *)read_uint(stream);
-      UInt size = read_uint(stream);
+      char *base = (void *)read_UInt(stream);
+      UInt size = read_UInt(stream);
       LogUpdClause *cl;
       Int nrefs = 0;
 
@@ -862,9 +927,9 @@ read_clauses(IOSTREAM *stream, PredEntry *pp, UInt nclauses, UInt flags) {
     }
   } else if (pp->PredFlags & MegaClausePredFlag) {
     CACHE_REGS
-    char *base = (void *)read_uint(stream);
-    UInt mask = read_uint(stream);
-    UInt size = read_uint(stream);
+    char *base = (void *)read_UInt(stream);
+    UInt mask = read_UInt(stream);
+    UInt size = read_UInt(stream);
     MegaClause *cl = (MegaClause *)Yap_AlwaysAllocCodeSpace(size);
 
     if (nclauses) {
@@ -894,8 +959,8 @@ read_clauses(IOSTREAM *stream, PredEntry *pp, UInt nclauses, UInt flags) {
     UInt i;
 
     for (i = 0; i < nclauses; i++) {
-      char *base = (void *)read_uint(stream);
-      UInt size = read_uint(stream);
+      char *base = (void *)read_UInt(stream);
+      UInt size = read_UInt(stream);
       DynamicClause *cl = (DynamicClause *)Yap_AlwaysAllocCodeSpace(size);
     
       LOCAL_HDiff = (char *)cl-base;
@@ -917,8 +982,8 @@ read_clauses(IOSTREAM *stream, PredEntry *pp, UInt nclauses, UInt flags) {
     }
     Yap_Abolish(pp);
     for (i = 0; i < nclauses; i++) {
-      char *base = (void *)read_uint(stream);
-      UInt size = read_uint(stream);
+      char *base = (void *)read_UInt(stream);
+      UInt size = read_UInt(stream);
       StaticClause *cl = (StaticClause *)Yap_AlwaysAllocCodeSpace(size);
 
       LOCAL_HDiff = (char *)cl-base;
@@ -938,16 +1003,19 @@ read_pred(IOSTREAM *stream, Term mod) {
   UInt nclauses, fl1;
   PredEntry *ap;
 
-  ap = LookupPredEntry((PredEntry *)read_uint(stream));
-  flags = read_uint(stream);
+  ap = LookupPredEntry((PredEntry *)read_UInt(stream));
+  flags = read_UInt(stream);
 #if SIZEOF_INT_P==4
-  eflags = read_uint(stream);
+  eflags = read_UInt(stream);
 #endif
-  nclauses = read_uint(stream);
+  nclauses = read_UInt(stream);
   if (ap->PredFlags & IndexedPredFlag) {
     Yap_RemoveIndexation(ap);
   }
-
+  //if (ap->ArityOfPE && ap->ModuleOfPred != IDB_MODULE)
+  //  printf("   %s/%ld\n", NameOfFunctor(ap->FunctorOfPred)->StrOfAE, ap->ArityOfPE);
+  //else if (ap->ModuleOfPred != IDB_MODULE)
+  //  printf("   %s/%ld\n", ((Atom)(ap->FunctorOfPred))->StrOfAE, ap->ArityOfPE);
 #if SIZEOF_INT_P==4
   fl1 = flags & ((UInt)STATIC_PRED_FLAGS);
   ap->PredFlags &= ~((UInt)STATIC_PRED_FLAGS);
@@ -959,17 +1027,18 @@ read_pred(IOSTREAM *stream, Term mod) {
   ap->PredFlags |= fl1;
 #endif
   if (flags & NumberDBPredFlag) {
-    ap->src.IndxId = read_uint(stream);
+    ap->src.IndxId = read_UInt(stream);
   } else {
-    ap->src.OwnerFile = (Atom)read_uint(stream);
+    ap->src.OwnerFile = (Atom)read_UInt(stream);
     if (ap->src.OwnerFile) {
       ap->src.OwnerFile = AtomAdjust(ap->src.OwnerFile);
     }
   }
-  ap->TimeStampOfPred = read_uint(stream);
+  ap->TimeStampOfPred = read_UInt(stream);
   /* multifile predicates cannot reside in module 0 */
-  if (flags & MultiFileFlag && ap->ModuleOfPred == PROLOG_MODULE)
+  if (flags & MultiFileFlag && ap->ModuleOfPred == PROLOG_MODULE) {
     ap->ModuleOfPred = TermProlog;
+  }
   read_clauses(stream, ap, nclauses, flags);
   if (flags & HiddenPredFlag) {  
     Yap_HidePred(ap);
@@ -980,8 +1049,8 @@ static void
 read_ops(IOSTREAM *stream)  {
   Int x;
   while ((x = read_tag(stream)) != QLY_END_OPS) {
-    Atom at = (Atom)read_uint(stream);
-    Term mod = (Term)read_uint(stream);
+    Atom at = (Atom)read_UInt(stream);
+    Term mod = (Term)read_UInt(stream);
     OpEntry *op;
 
     at = AtomAdjust(at);
@@ -1001,16 +1070,16 @@ read_module(IOSTREAM *stream) {
   qlf_tag_t x;
 
   InitHash();
-  read_header(stream);
   ReadHash(stream);
   while ((x = read_tag(stream)) == QLY_START_MODULE) {
-    Term mod = (Term)read_uint(stream);
-
+    Term mod = (Term)read_UInt(stream);
+    if (mod == 0)
+      mod = TermProlog;
     mod = MkAtomTerm(AtomAdjust(AtomOfTerm(mod)));
     if (mod)
-    while ((x = read_tag(stream)) == QLY_START_PREDICATE) {
-      read_pred(stream, mod);
-    }
+      while ((x = read_tag(stream)) == QLY_START_PREDICATE) {
+	read_pred(stream, mod);
+      }
   }
   read_ops(stream);
   CloseHash();
@@ -1041,10 +1110,6 @@ static void
 ReInitProlog(void)
 {
   Term t = MkAtomTerm(AtomInitProlog);
-#if defined(YAPOR) || defined(TABLING)
-  Yap_init_root_frames();
-#endif /* YAPOR || TABLING */
-  Yap_InitYaamRegs( 0 );
   YAP_RunGoalOnce(t);
 }
 
@@ -1054,26 +1119,22 @@ static Int
 p_read_program( USES_REGS1 )
 {
   IOSTREAM *stream;
-  void YAP_Reset(void);
   Term t1 = Deref(ARG1);
 
   if (IsVarTerm(t1)) {
     Yap_Error(INSTANTIATION_ERROR,t1,"read_program/3");
     return FALSE;
   }
-  if (!IsAtomTerm(t1)) {
-    Yap_Error(TYPE_ERROR_ATOM,t1,"read_program/3");
-    return(FALSE);
-  }
-  if (!(stream = Yap_GetInputStream(AtomOfTerm(t1))) ) {
+  if ((stream = Yap_GetInputStream(AtomOfTerm(t1))) ) {
     return FALSE;
   }
-  YAP_Reset();
+  YAP_Reset( YAP_RESET_FROM_RESTORE );
+  if (get_header( stream ) == NIL)
+    return FALSE;
   read_module(stream);
   Sclose( stream );
   /* back to the top level we go */
   ReInitProlog();
-  Yap_RestartYap( 3 );
   return TRUE;
 }
 
@@ -1084,6 +1145,8 @@ Yap_Restore(char *s, char *lib_dir)
   if (!stream) 
     return -1;
   GLOBAL_RestoreFile = s;
+  if (get_header( stream ) == NIL)
+    return FALSE;
   read_module(stream);
   Sclose( stream );
   GLOBAL_RestoreFile = NULL;
@@ -1094,7 +1157,9 @@ Yap_Restore(char *s, char *lib_dir)
 void Yap_InitQLYR(void)
 {
   Yap_InitCPred("$qload_module_preds", 1, p_read_module_preds, SyncPredFlag|UserCPredFlag);
+  Yap_InitCPred("$qload_file_preds", 1, p_read_module_preds, SyncPredFlag|UserCPredFlag);
   Yap_InitCPred("$qload_program", 1, p_read_program, SyncPredFlag|UserCPredFlag);
+  Yap_InitCPred("$q_header", 2, p_get_header, SyncPredFlag|UserCPredFlag);
   if (FALSE) {
     restore_codes();
   }

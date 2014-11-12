@@ -42,6 +42,8 @@
 #define AtomArrayType Yap_heap_regs->AtomArrayType_
   Atom AtomArrow_;
 #define AtomArrow Yap_heap_regs->AtomArrow_
+  Atom AtomDoubleArrow_;
+#define AtomDoubleArrow Yap_heap_regs->AtomDoubleArrow_
   Atom AtomAssert_;
 #define AtomAssert Yap_heap_regs->AtomAssert_
   Atom AtomEmptyBrackets_;
@@ -104,6 +106,8 @@
 #define AtomCharacter Yap_heap_regs->AtomCharacter_
   Atom AtomCharacterCode_;
 #define AtomCharacterCode Yap_heap_regs->AtomCharacterCode_
+  Atom AtomCharset_;
+#define AtomCharset Yap_heap_regs->AtomCharset_
   Atom AtomCleanCall_;
 #define AtomCleanCall Yap_heap_regs->AtomCleanCall_
   Atom AtomColomn_;
@@ -112,6 +116,8 @@
 #define AtomCodeSpace Yap_heap_regs->AtomCodeSpace_
   Atom AtomCodes_;
 #define AtomCodes Yap_heap_regs->AtomCodes_
+  Atom AtomCoInductive_;
+#define AtomCoInductive Yap_heap_regs->AtomCoInductive_
   Atom AtomComma_;
 #define AtomComma Yap_heap_regs->AtomComma_
   Atom AtomCommentHook_;
@@ -164,6 +170,8 @@
 #define AtomDevNull Yap_heap_regs->AtomDevNull_
   Atom AtomDiff_;
 #define AtomDiff Yap_heap_regs->AtomDiff_
+  Atom AtomDiscontiguous_;
+#define AtomDiscontiguous Yap_heap_regs->AtomDiscontiguous_
   Atom AtomDollar_;
 #define AtomDollar Yap_heap_regs->AtomDollar_
   Atom AtomDoLogUpdClause_;
@@ -368,6 +376,8 @@
 #define AtomMost Yap_heap_regs->AtomMost_
   Atom AtomMultiFile_;
 #define AtomMultiFile Yap_heap_regs->AtomMultiFile_
+  Atom AtomMultiple_;
+#define AtomMultiple Yap_heap_regs->AtomMultiple_
   Atom AtomMutable_;
 #define AtomMutable Yap_heap_regs->AtomMutable_
   Atom AtomMutableVariable_;
@@ -392,6 +402,8 @@
 #define AtomNbTerm Yap_heap_regs->AtomNbTerm_
   Atom AtomNew_;
 #define AtomNew Yap_heap_regs->AtomNew_
+  Atom AtomNoEffect_;
+#define AtomNoEffect Yap_heap_regs->AtomNoEffect_
   Atom AtomNoMemory_;
 #define AtomNoMemory Yap_heap_regs->AtomNoMemory_
   Atom AtomNone_;
@@ -542,6 +554,8 @@
 #define AtomSigDebug Yap_heap_regs->AtomSigDebug_
   Atom AtomSigDelayCreep_;
 #define AtomSigDelayCreep Yap_heap_regs->AtomSigDelayCreep_
+  Atom AtomSigFPE_;
+#define AtomSigFPE Yap_heap_regs->AtomSigFPE_
   Atom AtomSigHup_;
 #define AtomSigHup Yap_heap_regs->AtomSigHup_
   Atom AtomSigInt_;
@@ -566,6 +580,8 @@
 #define AtomSigVTAlarm Yap_heap_regs->AtomSigVTAlarm_
   Atom AtomSigWakeUp_;
 #define AtomSigWakeUp Yap_heap_regs->AtomSigWakeUp_
+  Atom AtomSingleton_;
+#define AtomSingleton Yap_heap_regs->AtomSingleton_
   Atom AtomSlash_;
 #define AtomSlash Yap_heap_regs->AtomSlash_
   Atom AtomSocket_;
@@ -672,6 +688,8 @@
 #define AtomVBar Yap_heap_regs->AtomVBar_
   Atom AtomVar_;
 #define AtomVar Yap_heap_regs->AtomVar_
+  Atom AtomVarBranches_;
+#define AtomVarBranches Yap_heap_regs->AtomVarBranches_
   Atom AtomHiddenVar_;
 #define AtomHiddenVar Yap_heap_regs->AtomHiddenVar_
   Atom AtomVariable_;
@@ -702,6 +720,10 @@
 #define FunctorArrayEntry Yap_heap_regs->FunctorArrayEntry_
   Functor FunctorArrow_;
 #define FunctorArrow Yap_heap_regs->FunctorArrow_
+  Functor FunctorDoubleArrow_;
+#define FunctorDoubleArrow Yap_heap_regs->FunctorDoubleArrow_
+  Functor FunctorAssert1_;
+#define FunctorAssert1 Yap_heap_regs->FunctorAssert1_
   Functor FunctorAssert_;
 #define FunctorAssert Yap_heap_regs->FunctorAssert_
   Functor FunctorAtFoundOne_;

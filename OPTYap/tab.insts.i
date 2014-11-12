@@ -434,14 +434,14 @@
       if (PREG->opc == Yap_opcode(_table_try)) {
 	/* table_try */
 	code_ap = NEXTOP(PREG,Otapl);
-	PREG = PREG->u.Otapl.d;
+	PREG = PREG->y_u.Otapl.d;
       } else if (PREG->opc == Yap_opcode(_table_try_single)) {
 	/* table_try_single */
 	code_ap = COMPLETION;
-	PREG = PREG->u.Otapl.d;
+	PREG = PREG->y_u.Otapl.d;
       } else {
 	/* table_try_me */
-	code_ap = PREG->u.Otapl.d;
+	code_ap = PREG->y_u.Otapl.d;
 	PREG = NEXTOP(PREG,Otapl);
       }
       PREFETCH_OP(PREG);
@@ -453,7 +453,7 @@
       GONext();
     }
 #else
-    PREG = PREG->u.Otapl.d;
+    PREG = PREG->y_u.Otapl.d;
     PREFETCH_OP(PREG);
     GONext();    
 #endif /* INCOMPLETE_TABLING */
@@ -470,7 +470,7 @@
     sg_fr_ptr sg_fr;
 
     check_trail(TR);
-    tab_ent = PREG->u.Otapl.te;
+    tab_ent = PREG->y_u.Otapl.te;
     YENV2MEM;
     sg_fr = subgoal_search(PREG, YENV_ADDRESS);
     MEM2YENV;
@@ -488,7 +488,7 @@
 #ifdef THREADS_CONSUMER_SHARING
     if (SgFr_state(sg_fr) == ready_external) {
       init_subgoal_frame(sg_fr);
-      store_generator_consumer_node(tab_ent, sg_fr, TRUE, PREG->u.Otapl.s);
+      store_generator_consumer_node(tab_ent, sg_fr, TRUE, PREG->y_u.Otapl.s);
       PREFETCH_OP(PREG);
       allocate_environment();
       check_for_deadlock(sg_fr);
@@ -505,37 +505,57 @@
       } else
 #endif /* DETERMINISTIC_TABLING */
       {
-	store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, COMPLETION);
+	store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, COMPLETION);
       }
-      PREG = PREG->u.Otapl.d;  /* should work also with PREG = NEXTOP(PREG,Otapl); */
+      PREG = PREG->y_u.Otapl.d;  /* should work also with PREG = NEXTOP(PREG,Otapl); */
       PREFETCH_OP(PREG);
       allocate_environment();
       GONext();
 #ifdef INCOMPLETE_TABLING
     } else if (SgFr_state(sg_fr) == incomplete) {
-      /* subgoal incomplete --> start by loading the answers already found */
-      ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
-      CELL *subs_ptr = YENV;
-      init_subgoal_frame(sg_fr);
-      UNLOCK_SG_FR(sg_fr);
-      SgFr_try_answer(sg_fr) = ans_node;
-      store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, TRY_ANSWER);
-      PREG = (yamop *) CPREG;
-      PREFETCH_OP(PREG);
-      load_answer(ans_node, subs_ptr);
-      YENV = ENV;
-      GONext();
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        printf("Currently Unsupported\n");
+      } else {
+        /* subgoal incomplete --> start by loading the answers already found */
+        ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
+        CELL *subs_ptr = YENV;
+        init_subgoal_frame(sg_fr);
+        UNLOCK_SG_FR(sg_fr);
+        SgFr_try_answer(sg_fr) = ans_node;
+        store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, TRY_ANSWER);
+        PREG = (yamop *) CPREG;
+        PREFETCH_OP(PREG);
+        load_answer(ans_node, subs_ptr);
+        YENV = ENV;
+        GONext();
+      }
 #endif /* INCOMPLETE_TABLING */
     } else if (SgFr_state(sg_fr) == evaluating) {
-      /* subgoal in evaluation */
-      choiceptr leader_cp;
-#if YAPOR
-      int leader_dep_on_stack;
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        /* Used for coinductive tabling strategy */
+        CELL *subs_ptr;
+        subs_ptr = (CELL *) (GEN_CP(SgFr_gen_cp(sg_fr)) + 1);
+        subs_ptr += SgFr_arity(sg_fr); // Points at the Parent goal Variables
+        int i;
+        for (i = 0; i < subs_ptr[0]; i++)
+          Yap_unify(subs_ptr[i+1], YENV[i+1]);
+        /* yes answer --> procceed */
+        UNLOCK_SG_FR(sg_fr);
+        PREG = (yamop *) CPREG;
+        PREFETCH_OP(PREG);
+        YENV = ENV; // Consume the variables
+        GONext(); // Succeed the goal :-D
+      } else {
+        /* subgoal in evaluation */
+        choiceptr leader_cp;
+#ifdef YAPOR
+        int leader_dep_on_stack;
 #endif
-      find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
-      UNLOCK_SG_FR(sg_fr);
-      find_leader_node(leader_cp, leader_dep_on_stack);
-      store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+        find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
+        UNLOCK_SG_FR(sg_fr);
+        find_leader_node(leader_cp, leader_dep_on_stack);
+        store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+      }
 #ifdef DEBUG_OPTYAP
       if (GLOBAL_parallel_mode == PARALLEL_MODE_RUNNING) {
 	choiceptr aux_cp;
@@ -618,7 +638,7 @@
     sg_fr_ptr sg_fr;
 
     check_trail(TR);
-    tab_ent = PREG->u.Otapl.te;
+    tab_ent = PREG->y_u.Otapl.te;
     YENV2MEM;
     sg_fr = subgoal_search(PREG, YENV_ADDRESS);
     MEM2YENV;
@@ -637,7 +657,7 @@
     if (SgFr_state(sg_fr) == ready_external) {
       init_subgoal_frame(sg_fr);
       UNLOCK_SG_FR(sg_fr);
-      store_generator_consumer_node(tab_ent, sg_fr, TRUE, PREG->u.Otapl.s);
+      store_generator_consumer_node(tab_ent, sg_fr, TRUE, PREG->y_u.Otapl.s);
       PREFETCH_OP(PREG);
       allocate_environment();
       check_for_deadlock(sg_fr);
@@ -648,36 +668,44 @@
       /* subgoal new */
       init_subgoal_frame(sg_fr);
       UNLOCK_SG_FR(sg_fr);
-      store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, PREG->u.Otapl.d);
+      store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, PREG->y_u.Otapl.d);
       PREG = NEXTOP(PREG, Otapl);
       PREFETCH_OP(PREG);
       allocate_environment();
       GONext();
 #ifdef INCOMPLETE_TABLING
     } else if (SgFr_state(sg_fr) == incomplete) {
-      /* subgoal incomplete --> start by loading the answers already found */
-      ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
-      CELL *subs_ptr = YENV;
-      init_subgoal_frame(sg_fr);
-      UNLOCK_SG_FR(sg_fr);
-      SgFr_try_answer(sg_fr) = ans_node;
-      store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, TRY_ANSWER);
-      PREG = (yamop *) CPREG;
-      PREFETCH_OP(PREG);
-      load_answer(ans_node, subs_ptr);
-      YENV = ENV;
-      GONext();
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        printf("Currently Unsupported\n");
+      } else {
+        /* subgoal incomplete --> start by loading the answers already found */
+        ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
+        CELL *subs_ptr = YENV;
+        init_subgoal_frame(sg_fr);
+        UNLOCK_SG_FR(sg_fr);
+        SgFr_try_answer(sg_fr) = ans_node;
+        store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, TRY_ANSWER);
+        PREG = (yamop *) CPREG;
+        PREFETCH_OP(PREG);
+        load_answer(ans_node, subs_ptr);
+        YENV = ENV;
+        GONext();
+      }
 #endif /* INCOMPLETE_TABLING */
     } else if (SgFr_state(sg_fr) == evaluating) {
-      /* subgoal in evaluation */
-      choiceptr leader_cp;
-#if YAPOR
-      int  leader_dep_on_stack;
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        printf("Currently Unsupported\n");
+      } else {
+        /* subgoal in evaluation */
+        choiceptr leader_cp;
+#ifdef YAPOR
+        int leader_dep_on_stack;
 #endif
-      find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
-      UNLOCK_SG_FR(sg_fr);
-      find_leader_node(leader_cp, leader_dep_on_stack);
-      store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+        find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
+        UNLOCK_SG_FR(sg_fr);
+        find_leader_node(leader_cp, leader_dep_on_stack);
+        store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+      }
 #ifdef DEBUG_OPTYAP
       if (GLOBAL_parallel_mode == PARALLEL_MODE_RUNNING) {
 	choiceptr aux_cp;
@@ -760,7 +788,7 @@
     sg_fr_ptr sg_fr;
 
     check_trail(TR);
-    tab_ent = PREG->u.Otapl.te;
+    tab_ent = PREG->y_u.Otapl.te;
     YENV2MEM;
     sg_fr = subgoal_search(PREG, YENV_ADDRESS);
     MEM2YENV;
@@ -779,7 +807,7 @@
     if (SgFr_state(sg_fr) == ready_external) {
       init_subgoal_frame(sg_fr);
       UNLOCK_SG_FR(sg_fr);
-      store_generator_consumer_node(tab_ent, sg_fr, TRUE , PREG->u.Otapl.s);
+      store_generator_consumer_node(tab_ent, sg_fr, TRUE , PREG->y_u.Otapl.s);
       PREFETCH_OP(PREG);
       allocate_environment();
       check_for_deadlock(sg_fr);
@@ -790,36 +818,56 @@
       /* subgoal new */
       init_subgoal_frame(sg_fr);
       UNLOCK_SG_FR(sg_fr);
-      store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, NEXTOP(PREG,Otapl));
-      PREG = PREG->u.Otapl.d;
+      store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, NEXTOP(PREG,Otapl));
+      PREG = PREG->y_u.Otapl.d;
       PREFETCH_OP(PREG);
       allocate_environment();
       GONext();
 #ifdef INCOMPLETE_TABLING
     } else if (SgFr_state(sg_fr) == incomplete) {
-      /* subgoal incomplete --> start by loading the answers already found */
-      ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
-      CELL *subs_ptr = YENV;
-      init_subgoal_frame(sg_fr);
-      UNLOCK_SG_FR(sg_fr);
-      SgFr_try_answer(sg_fr) = ans_node;
-      store_generator_node(tab_ent, sg_fr, PREG->u.Otapl.s, TRY_ANSWER);
-      PREG = (yamop *) CPREG;
-      PREFETCH_OP(PREG);
-      load_answer(ans_node, subs_ptr);
-      YENV = ENV;
-      GONext();
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        printf("Currently Unsupported\n");
+      } else {
+        /* subgoal incomplete --> start by loading the answers already found */
+        ans_node_ptr ans_node = SgFr_first_answer(sg_fr);
+        CELL *subs_ptr = YENV;
+        init_subgoal_frame(sg_fr);
+        UNLOCK_SG_FR(sg_fr);
+        SgFr_try_answer(sg_fr) = ans_node;
+        store_generator_node(tab_ent, sg_fr, PREG->y_u.Otapl.s, TRY_ANSWER);
+        PREG = (yamop *) CPREG;
+        PREFETCH_OP(PREG);
+        load_answer(ans_node, subs_ptr);
+        YENV = ENV;
+        GONext();
+      }
 #endif /* INCOMPLETE_TABLING */
     } else if (SgFr_state(sg_fr) == evaluating) {
-      /* subgoal in evaluation */
-      choiceptr leader_cp;
-#if YAPOR
-      int leader_dep_on_stack;
+      if (IsMode_CoInductive(TabEnt_flags(tab_ent))) {
+        /* Used for coinductive tabling strategy */
+        CELL *subs_ptr;
+        subs_ptr = (CELL *) (GEN_CP(SgFr_gen_cp(sg_fr)) + 1);
+        subs_ptr += SgFr_arity(sg_fr); // Points at the Parent goal Variables
+        int i;
+        for (i = 0; i < subs_ptr[0]; i++)
+          Yap_unify(subs_ptr[i+1], YENV[i+1]);
+        /* yes answer --> procceed */
+        UNLOCK_SG_FR(sg_fr);
+        PREG = (yamop *) CPREG;
+        PREFETCH_OP(PREG);
+        YENV = ENV; // Consume the variables
+        GONext(); // Succeed the goal :-D
+      } else {
+        /* subgoal in evaluation */
+        choiceptr leader_cp;
+#ifdef YAPOR
+        int leader_dep_on_stack;
 #endif
-      find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
-      UNLOCK_SG_FR(sg_fr);
-      find_leader_node(leader_cp, leader_dep_on_stack);
-      store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+        find_dependency_node(sg_fr, leader_cp, leader_dep_on_stack);
+        UNLOCK_SG_FR(sg_fr);
+        find_leader_node(leader_cp, leader_dep_on_stack);
+        store_consumer_node(tab_ent, sg_fr, leader_cp, leader_dep_on_stack);
+      }
 #ifdef DEBUG_OPTYAP
       if (GLOBAL_parallel_mode == PARALLEL_MODE_RUNNING) {
 	choiceptr aux_cp;
@@ -898,7 +946,7 @@
 ************************************************************************/
 
   Op(table_retry_me, Otapl)
-    restore_generator_node(PREG->u.Otapl.s, PREG->u.Otapl.d);
+    restore_generator_node(PREG->y_u.Otapl.s, PREG->y_u.Otapl.d);
     YENV = (CELL *) PROTECT_FROZEN_B(B);
     set_cut(YENV, B->cp_b);
     SET_BB(NORM_CP(YENV));
@@ -914,12 +962,12 @@
 ************************************************************************/
 
   Op(table_retry, Otapl)
-    restore_generator_node(PREG->u.Otapl.s, NEXTOP(PREG,Otapl));
+    restore_generator_node(PREG->y_u.Otapl.s, NEXTOP(PREG,Otapl));
     YENV = (CELL *) PROTECT_FROZEN_B(B);
     set_cut(YENV, B->cp_b);
     SET_BB(NORM_CP(YENV));
     allocate_environment();
-    PREG = PREG->u.Otapl.d;
+    PREG = PREG->y_u.Otapl.d;
     GONext();
   ENDOp();
 
@@ -930,10 +978,10 @@
 ************************************************************************/
 
   Op(table_trust_me, Otapl)
-    restore_generator_node(PREG->u.Otapl.s, COMPLETION);
+    restore_generator_node(PREG->y_u.Otapl.s, COMPLETION);
 #ifdef DETERMINISTIC_TABLING
     if (B_FZ > B && IS_BATCHED_NORM_GEN_CP(B)) {   
-      CELL *subs_ptr = (CELL *)(GEN_CP(B) + 1) + PREG->u.Otapl.s;
+      CELL *subs_ptr = (CELL *)(GEN_CP(B) + 1) + PREG->y_u.Otapl.s;
       choiceptr gcp = NORM_CP(DET_GEN_CP(subs_ptr) - 1);
       sg_fr_ptr sg_fr = GEN_CP(B)->cp_sg_fr; 
       DET_GEN_CP(gcp)->cp_sg_fr = sg_fr;         
@@ -962,10 +1010,10 @@
 ************************************************************************/
 
   Op(table_trust, Otapl)
-    restore_generator_node(PREG->u.Otapl.s, COMPLETION);
+    restore_generator_node(PREG->y_u.Otapl.s, COMPLETION);
 #ifdef DETERMINISTIC_TABLING
   if (B_FZ > B && IS_BATCHED_NORM_GEN_CP(B)) {    
-      CELL *subs_ptr = (CELL *)(GEN_CP(B) + 1) + PREG->u.Otapl.s;
+      CELL *subs_ptr = (CELL *)(GEN_CP(B) + 1) + PREG->y_u.Otapl.s;
       choiceptr gcp = NORM_CP(DET_GEN_CP(subs_ptr) - 1);
       sg_fr_ptr sg_fr = GEN_CP(B)->cp_sg_fr; 
       DET_GEN_CP(gcp)->cp_sg_fr = sg_fr;         
@@ -983,7 +1031,7 @@
     set_cut(YENV, B->cp_b);
     SET_BB(NORM_CP(YENV));
     allocate_environment();
-    PREG = PREG->u.Otapl.d;
+    PREG = PREG->y_u.Otapl.d;
     GONext();
   ENDOp();
 
@@ -1008,7 +1056,7 @@
 #endif /* DETERMINISTIC_TABLING */
     {
       sg_fr = GEN_CP(gcp)->cp_sg_fr;
-      subs_ptr = (CELL *)(GEN_CP(gcp) + 1) + PREG->u.s.s;
+      subs_ptr = (CELL *)(GEN_CP(gcp) + 1) + PREG->y_u.s.s;
     }
 #if defined(DEBUG_TABLING) && !defined(DETERMINISTIC_TABLING)
     {
@@ -1016,7 +1064,7 @@
       CELL *aux_args;
       CELL *aux_subs;
 
-      arity_args = PREG->u.s.s;
+      arity_args = PREG->y_u.s.s;
       arity_subs = *subs_ptr;
       aux_args = (CELL *)(GEN_CP(gcp) + 1);
       aux_subs = subs_ptr;

@@ -47,9 +47,11 @@
                 variable_value/3
         ]).
 
+:- use_module(library(lists)).
 :- use_module(library(clpr)).
 :- use_module(library(assoc)).
 :- use_module(library(pio)).
+:- use_module(library(maplist)).
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    CLP(R) bindings

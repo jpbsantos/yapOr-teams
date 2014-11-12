@@ -4,7 +4,7 @@
 *									 *
 *	Yap Prolog was developed at NCCUP - Universidade do Porto	 *
 *									 *
-* Copyright L.Damas, V.S.Costa and Universidade do Porto 1985-1997	 *
+* Copyright L.Damas, V.S.Costa and Universidade do Porto 1985-2014	 *
 *									 *
 **************************************************************************
 *									 *
@@ -15,9 +15,288 @@
 *									 *
 *************************************************************************/
 
+/**
+
+@defgroup YAPControl Control Predicates
+@ingroup YAPBuiltins
+@{
+
+*/
+
+
+
+/** @pred   :_P_ ; :_Q_  is iso
+Disjunction of goals (or).
+
+Example:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ p(X) :- q(X); r(X).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+should be read as "p( _X_) if q( _X_) or r( _X_)".
+
+
+*/
+
+/** @pred  \+ :_P_  is iso
+Negation by failure.
+
+Goal  _P_ is not provable. The execution of this predicate fails if
+and only if the goal  _P_ finitely succeeds. It is not a true logical
+negation, which is impossible in standard Prolog, but
+"negation-by-failure".
+
+This predicate might be defined as:
+
+~~~~~~~~~~~~
+ \+(P) :- P, !, fail.
+ \+(_).
+~~~~~~~~~~~~
+if  _P_ did not include "cuts".
+
+If _P_ includes cuts, the cuts are defined to be scoped by _P_: they canno cut over the calling prredicate.
+
+ ~~~~~~~~~~~~
+  go(P).
+          :- \+ P, !, fail.
+  \+(_).
+ ~~~~~~~~~~~~
+
+*/
+
+
+/** @pred  not :_P_
+
+
+Goal  _P_ is not provable. The same as `\+  _P_`.
+
+This predicate is kept for compatibility with C-Prolog and previous
+versions of YAP. Uses of not/1 should be replaced by
+`\+`/1, as YAP does not implement true negation.
+
+
+*/
+
+
+
+/** @pred   :_Condition__ -> :_Action_  is iso
+
+
+Read as "if-then-else" or "commit". This operator is similar to the
+conditional operator of imperative languages and can be used alone or
+with an else part as follows:
+
+
+~~~~~
+    +P -> +Q
+~~~~~
+
+"if P then Q".
+
+
+~~~~~
+  +P -> +Q; +R
+~~~~~
+
+"if P then Q else R".
+
+These two predicates could be defined respectively in Prolog as:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ (P -> Q) :- P, !, Q.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+and
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ (P -> Q; R) :- P, !, Q.
+ (P -> Q; R) :- R.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+if there were no "cuts" in  _P_,  _Q_ and  _R_.
+
+Note that the commit operator works by "cutting" any alternative
+solutions of  _P_.
+
+Note also that you can use chains of commit operators like:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    P -> Q ; R -> S ; T.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Note that `(->)/2` does not affect the scope of cuts in its
+arguments.
+
+
+*/
+
+/** @pred    :_Condition_ *-> :_Action_ is iso
+
+This construct implements the so-called <em>soft-cut</em>. The control is
+defined as follows:
+  + If  _Condition_ succeeds at least once, the
+semantics is the same as ( _Condition_,  _Action_).
+
+  + If
+ _Condition_ does not succeed, the semantics is that of (\\+
+ _Condition_,  _Else_).
+
+ In other words, if  _Condition_
+succeeds at least once, simply behave as the conjunction of
+ _Condition_ and  _Action_, otherwise execute  _Else_.
+
+The construct  _A *-> B_, i.e. without an  _Else_ branch, is
+translated as the normal conjunction  _A_,  _B_.
+
+
+*/
+
+/** @pred  ! is iso
+
+
+Read as "cut". Cuts any choices taken in the current procedure.
+When first found "cut" succeeds as a goal, but if backtracking should
+later return to it, the parent goal (the one which matches the head of
+the clause containing the "cut", causing the clause activation) will
+fail. This is an extra-logical predicate and cannot be explained in
+terms of the declarative semantics of Prolog.
+
+example:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ member(X,[X|_]).
+ member(X,[_|L]) :- member(X,L).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With the above definition
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ ?- member(X,[1,2,3]).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+will return each element of the list by backtracking. With the following
+definition:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ member(X,[X|_]) :- !.
+ member(X,[_|L]) :- member(X,L).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+the same query would return only the first element of the
+list, since backtracking could not "pass through" the cut.
+
+*/
+
+
+system_module(_init, _SysExps, _Decls) :- !.
+system_module(M, SysExps, Decls) :-
+	'$current_module'(prolog, M),
+	'$compile'( ('$system_module'(M) :- true), 0, assert_static('$system_module'(M)), M ),
+	'$export_preds'(SysExps, prolog),
+	'$export_preds'(Decls, M).
+
+'$export_preds'([], _).
+'$export_preds'([N/A|Decls], M) :-
+    functor(S, N, A),
+    '$sys_export'(S, M),
+    '$export_preds'(Decls, M).
+
+use_system_module(_init, _SysExps) :- !.
+use_system_module(M, SysExps) :-
+	'$current_module'(M0, M0),
+	'$import_system'(SysExps, M0, M).
+
+'$import_system'([], _, _).
+'$import_system'([N/A|Decls], M0, M) :-
+    functor(S, N, A),
+    '$compile'( (G :- M0:G) ,0, assert_static((M:G :- M0:G)), M ),
+    '$import_system'(Decls, M0, M).
+
+private(_).
+
+%
+% boootstrap predicates.
+%
+:- system_module( '$_boot', [
+        bootstrap/1,
+        call/1,
+        catch/3,
+        catch_ball/2,
+        expand_term/2,
+        import_system_module/2,
+        incore/1,
+        (not)/1,
+        repeat/0,
+        throw/1,
+        true/0], ['$$compile'/4,
+        '$call'/4,
+        '$catch'/3,
+        '$check_callable'/2,
+        '$check_head_and_body'/4,
+        '$check_if_reconsulted'/2,
+        '$clear_reconsulting'/0,
+        '$command'/4,
+        '$cut_by'/1,
+        '$disable_debugging'/0,
+        '$do_live'/0,
+        '$enable_debugging'/0,
+        '$find_goal_definition'/4,
+        '$handle_throw'/3,
+        '$head_and_body'/3,
+        '$inform_as_reconsulted'/2,
+        '$init_system'/0,
+        '$init_win_graphics'/0,
+        '$live'/0,
+        '$loop'/2,
+        '$meta_call'/2,
+        '$prompt_alternatives_on'/1,
+        '$run_at_thread_start'/0,
+        '$system_catch'/4,
+        '$undefp'/1,
+		   '$version'/0]).
+
+:- use_system_module( '$_absf', ['$system_library_directories'/2]).
+
+:- use_system_module( '$_checker', ['$check_term'/5,
+        '$sv_warning'/2]).
+
+:- use_system_module( '$_consult', ['$csult'/2]).
+
+:- use_system_module( '$_control', ['$run_atom_goal'/1]).
+
+:- use_system_module( '$_directives', ['$all_directives'/1,
+        '$exec_directives'/5]).
+
+:- use_system_module( '$_errors', ['$do_error'/2]).
+
+:- use_system_module( '$_grammar', ['$translate_rule'/2]).
+
+:- use_system_module( '$_modules', ['$get_undefined_pred'/4,
+        '$meta_expansion'/6,
+        '$module_expansion'/6]).
+
+:- use_system_module( '$_preddecls', ['$dynamic'/2]).
+
+:- use_system_module( '$_preds', ['$assert_static'/5,
+        '$assertz_dynamic'/4,
+        '$init_preds'/0,
+        '$unknown_error'/1,
+        '$unknown_warning'/1]).
+
+:- use_system_module( '$_qly', ['$init_state'/0]).
+
+:- use_system_module( '$_strict_iso', ['$check_iso_strict_clause'/1,
+        '$iso_check_goal'/2]).
+
+
 %
 %
 %
+
+/** @pred true is iso
+Succeed.
+
+Succeeds once.
+
+
+*/
 true :- true.
 
 '$live' :-
@@ -67,6 +346,11 @@ true :- true.
 %	;
 %	 true
 %	),
+    '$swi_current_prolog_flag'(file_name_variables, OldF),
+    '$swi_set_prolog_flag'(file_name_variables, true),
+    '$init_consult',
+    '$swi_set_prolog_flag'(file_name_variables, OldF),
+    '$init_win_graphics',
     '$init_globals',
     '$swi_set_prolog_flag'(fileerrors, true),
     set_value('$gc',on),
@@ -91,9 +375,8 @@ true :- true.
 	'$run_at_thread_start'.
 
 '$init_globals' :-
-	'$init_consult',
 	% '$swi_set_prolog_flag'(break_level, 0),
-	% '$set_read_error_handler'(error), let the user do that 
+	% '$set_read_error_handler'(error), let the user do that
 	nb_setval('$chr_toplevel_show_store',false).
 
 '$init_consult' :-
@@ -108,12 +391,22 @@ true :- true.
 	fail.
 '$init_consult' :-
 	retractall(user:library_directory(_)),
-	% make sure library_directory is open.
-	\+ clause(user:library_directory(_),_),
-	'$system_library_directories'(D),
+	'$system_library_directories'(library, D),
 	assert(user:library_directory(D)),
 	fail.
+'$init_consult' :-
+	retractall(user:commons_directory(_)),
+	'$system_library_directories'(commons, D),
+	assert(user:commons_directory(D)),
+	fail.
 '$init_consult'.
+
+'$init_win_graphics' :-
+    '$undefined'(window_title(_,_), system), !.
+'$init_win_graphics' :-
+    load_files([library(win_menu)], [silent(true),if(not_loaded)]),
+    fail.
+'$init_win_graphics'.
 
 '$init_or_threads' :-
 	'$c_yapor_workers'(W), !,
@@ -156,15 +449,15 @@ true :- true.
 	'$system_catch'('$raw_read'(user_input, Line), prolog, E,
 			(print_message(error, E),
 	                 '$handle_toplevel_error'(Line, E))),
-	(   
-	    current_predicate(_, user:rl_add_history(_))
-	-> 
+	(
+	    '$pred_exists'(rl_add_history(_), user)
+	->
 	    format(atom(CompleteLine), '~W~W',
 		   [ Line, [partial(true)],
 		     '.', [partial(true)]
 		   ]),
-	    call(user:rl_add_history(CompleteLine))
-	;   
+	    user:rl_add_history(CompleteLine)
+	;
 	    true
 	),
 	'$system_catch'(
@@ -209,6 +502,7 @@ true :- true.
 	'$swi_current_prolog_flag'(break_level, BreakLevel),
 	( Breaklevel \= 0 -> true ; '$pred_exists'(halt(_), user) -> halt(0) ; '$halt'(0) ).
 '$enter_top_level' :-
+        flush_output,
 	'$run_toplevel_hooks',
 	prompt1(' ?- '),
 	'$read_toplevel'(Command,Varnames),
@@ -221,15 +515,15 @@ true :- true.
 	( BreakLevel \= 0 -> true ; '$pred_exists'(halt(_), user) -> halt(0) ; '$halt'(0) ).
 
 
- '$erase_sets' :- 
+ '$erase_sets' :-
 		 eraseall('$'),
 		 eraseall('$$set'),
-		 eraseall('$$one'), 
+		 eraseall('$$one'),
 		 eraseall('$reconsulted'), fail.
  '$erase_sets' :- \+ recorded('$path',_,_), recorda('$path',"",_).
  '$erase_sets'.
 
- '$version' :- 
+ '$version' :-
 	 get_value('$version_name',VersionName),
 	 print_message(help, version(VersionName)),
 	 get_value('$myddas_version_name',MYDDASVersionName),
@@ -242,6 +536,30 @@ true :- true.
 	 fail.
  '$version'.
 
+/** @pred  repeat is iso
+Succeeds repeatedly.
+
+In the next example, `repeat` is used as an efficient way to implement
+a loop. The next example reads all terms in a file:
+~~~~~~~~~~~~~{.prolog}
+ a :- repeat, read(X), write(X), nl, X=end_of_file, !.
+~~~~~~~~~~~~~
+the loop is effectively terminated by the cut-goal, when the test-goal
+`X=end` succeeds. While the test fails, the goals `read(X)`,
+`write(X)`, and `nl` are executed repeatedly, because
+backtracking is caught by the `repeat` goal.
+
+The built-in `repeat/0` could be defined in Prolog by:
+
+~~~~~{.prolog}
+ repeat.
+ repeat :- repeat.
+~~~~~
+
+The predicate between/3 can be used to iterate for a pre-defined
+number of steps.
+
+*/
  repeat :- '$repeat'.
 
  '$repeat'.
@@ -256,11 +574,6 @@ true :- true.
  '$repeat' :- '$repeat'.
 
 '$start_corouts' :-
-	recorded('$corout','$corout'(Name,_,_),R),
-	Name \= main,
-	finish_corout(R),
-	fail.
-'$start_corouts' :- 
 	eraseall('$corout'),
 	eraseall('$result'),
 	eraseall('$actual'),
@@ -273,7 +586,7 @@ true :- true.
 	'$access_yap_flags'(9,1), !,
 	 '$execute_command'(C,VL,Pos,Con,C).
 '$command'(C,VL,Pos,Con) :-
-	( (Con = top ; var(C) ; C = [_|_])  ->  
+	( (Con = top ; var(C) ; C = [_|_])  ->
 	  '$execute_command'(C,VL,Pos,Con,C), ! ;
 	  % do term expansion
 	  expand_term(C, EC),
@@ -292,7 +605,7 @@ true :- true.
  '$execute_commands'([C|Cs],VL,Pos,Con,Source) :- !,
 	 (
 	   '$system_catch'('$execute_command'(C,VL,Pos,Con,C),prolog,Error,user:'$LoopError'(Error, Con)),
-	   fail	
+	   fail
 	 ;
 	   '$execute_commands'(Cs,VL,Pos,Con,Source)
 	 ).
@@ -315,7 +628,7 @@ true :- true.
 	 \+ '$if_directive'(Command),
 	 !.
  '$execute_command'((:-G),VL,Pos,Option,_) :-
-%          !, 
+%          !,
 	 Option \= top, !,
 	 '$current_module'(M),
 	 % allow user expansion
@@ -327,11 +640,11 @@ true :- true.
           ;
 	    '$execute_commands'(O,VL,Pos,Option,O)
 	 ).
- '$execute_command'((?-G), V, Pos, Option, Source) :-
+ '$execute_command'((?-G), VL, Pos, Option, Source) :-
 	 Option \= top, !,
-	 '$execute_command'(G, V, Pos, top, Source).
- '$execute_command'(G, V, Pos, Option, Source) :-
-	 '$continue_with_command'(Option, V, Pos, G, Source).
+	 '$execute_command'(G, VL, Pos, top, Source).
+ '$execute_command'(G, VL, Pos, Option, Source) :-
+	 '$continue_with_command'(Option, VL, Pos, G, Source).
 
  %
  % This command is very different depending on the language mode we are in.
@@ -339,7 +652,7 @@ true :- true.
  % ISO only wants directives in files
  % SICStus accepts everything in files
  % YAP accepts everything everywhere
- % 
+ %
  '$process_directive'(G, top, M, VL, Pos) :-
 	 '$access_yap_flags'(8, 0), !, % YAP mode, go in and do it,
 	 '$process_directive'(G, consult, M, VL, Pos).
@@ -366,51 +679,56 @@ true :- true.
  %
  % but YAP and SICStus does.
  %
- '$process_directive'(G, _, M, VL, Pos) :-
-	 ( '$execute'(M:G) -> true ; format(user_error,':- ~w:~w failed.~n',[M,G]) ).
+ '$process_directive'(G, Mode, M, VL, Pos) :-
+     ( '$undefined'('$save_directive'(G, Mode, M, VL, Pos),prolog) ->
+	   true
+	       ;
+	  '$save_directive'(G, Mode, M, VL, Pos)
+	  ->
+	   true
+	   ;
+	   true
+     ),
+     ( '$execute'(M:G) -> true ; format(user_error,':- ~w:~w failed.~n',[M,G]) ).
 
- '$continue_with_command'(Where,V,'$stream_position'(C,_P,A1,A2,A3),'$source_location'(_F,L):G,Source) :- !,
+'$continue_with_command'(Where,V,'$stream_position'(C,_P,A1,A2,A3),'$source_location'(_F,L):G,Source) :- !,
 	  '$continue_with_command'(Where,V,'$stream_position'(C,L,A1,A2,A3),G,Source).
- '$continue_with_command'(reconsult,V,Pos,G,Source) :-
+'$continue_with_command'(reconsult,V,Pos,G,Source) :-
 	 '$go_compile_clause'(G,V,Pos,5,Source),
 	 fail.
- '$continue_with_command'(consult,V,Pos,G,Source) :-
-	 '$go_compile_clause'(G,V,Pos,13,Source),
+'$continue_with_command'(consult,V,Pos,G,Source) :-
+     '$go_compile_clause'(G,V,Pos,13,Source),
 	 fail.
- '$continue_with_command'(top,V,_,G,_) :-
+'$continue_with_command'(top,V,_,G,_) :-
 	 '$query'(G,V).
 
  %
  % not 100% compatible with SICStus Prolog, as SICStus Prolog would put
  % module prefixes all over the place, although unnecessarily so.
  %
- '$go_compile_clause'(G,V,Pos,N,Source) :-
+ % G is the goal to compile
+ % Vs the named variables
+ % Pos the source position
+ % N where to add first or last
+ % Source the original clause
+ '$go_compile_clause'(G,Vs,Pos,N,Source) :-
 	 '$current_module'(Mod),
-	 '$go_compile_clause'(G,V,Pos,N,Mod,Mod,Source).
- 
-'$go_compile_clause'(G,_,_,_,_,_,Source) :-
+	 '$go_compile_clause'(G,Vs,Pos,N,Mod,Mod,Mod,Source).
+
+'$go_compile_clause'(G,_Vs,_Pos,_N,_HM,_BM,_SM,Source) :-
 	var(G), !,
-	'$do_error'(instantiation_error,assert(Source)).	
-'$go_compile_clause'((G:-_),_,_,_,_,_,Source) :-
+	'$do_error'(instantiation_error,assert(Source)).
+'$go_compile_clause'((G:-_),_Vs,_Pos,_N,_HM,_BM,_SM,Source) :-
 	var(G), !,
-	'$do_error'(instantiation_error,assert(Source)).	
-'$go_compile_clause'(M:G,V,Pos,N,_,_,Source) :- !,
-	  '$go_compile_clause'(G,V,Pos,N,M,M,Source).
-'$go_compile_clause'((M:H :- B),V,Pos,N,_,BodyMod,Source) :- !,
-	  '$go_compile_clause'((H :- B),V,Pos,N,M,BodyMod,Source).
-'$go_compile_clause'(G,V,Pos,N,HeadMod,BodyMod,Source) :- !,
-	 '$prepare_term'(G, V, Pos, G0, G1, BodyMod, HeadMod, Source),
+	'$do_error'(instantiation_error,assert(Source)).
+'$go_compile_clause'(M:G,Vs,Pos,N,_,_,SourceMod,Source) :- !,
+	  '$go_compile_clause'(G,Vs,Pos,N,M,M,M,Source).
+'$go_compile_clause'((M:H :- B),Vs,Pos,N,_,BodyMod,SourceMod,Source) :- !,
+	  '$go_compile_clause'((H :- B),Vs,Pos,N,M,BodyMod,SourceMod,Source).
+'$go_compile_clause'(G,Vs,Pos,N,HeadMod,BodyMod,SourceMod,Source) :- !,
+	 '$precompile_term'(G, G0, G1, HeadMod, BodyMod, SourceMod),
 	 '$$compile'(G1, G0, N, HeadMod).
 
- '$prepare_term'(G, V, Pos, G0, G1, BodyMod, SourceMod, Source) :-
-	 (
-	     get_value('$syntaxcheckflag',on)
-          ->
-	     '$check_term'(Source, G, V, Pos, BodyMod)
-	 ;
-	     true 
-	 ),
-	 '$precompile_term'(G, G0, G1, BodyMod, SourceMod).
 
  % process an input clause
  '$$compile'(G, G0, L, Mod) :-
@@ -446,13 +764,13 @@ true :- true.
 '$not_imported'(_, _).
 
 
-'$check_if_reconsulted'(N,A) :- 
-         once(recorded('$reconsulted',N/A,_)), 
-	 recorded('$reconsulted',X,_), 
-	 ( X = N/A , !; 
-	   X = '$', !, fail; 
-	   fail 
-	 ). 
+'$check_if_reconsulted'(N,A) :-
+         once(recorded('$reconsulted',N/A,_)),
+	 recorded('$reconsulted',X,_),
+	 ( X = N/A , !;
+	   X = '$', !, fail;
+	   fail
+	 ).
 
 '$inform_as_reconsulted'(N,A) :-
 	 recorda('$reconsulted',N/A,_).
@@ -483,7 +801,7 @@ true :- true.
 	  '$write_answer'(NV, LGs, Written),
 	  '$write_query_answer_true'(Written),
 	  (
-	   '$prompt_alternatives_on'(determinism), CP == NCP, DCP = 0 
+	   '$prompt_alternatives_on'(determinism), CP == NCP, DCP = 0
 	   ->
 	   format(user_error, '.~n', []),
 	   !
@@ -491,7 +809,7 @@ true :- true.
 	   '$another',
 	   !
 	  ),
-	  fail	 
+	  fail
 	 ;
 	  '$out_neg_answer'
 	 ).
@@ -524,15 +842,15 @@ true :- true.
 	  '$clean_ifcp'(CP),
 	   NCP is NCP2-NCP1
 	  ;
-%	   copy_term_nat(V, NV), 
-%	   LGs = [], 
-	   term_factorized(V, NV, LGs),
+	   copy_term_nat(V, NV),
+	   LGs = [],
+%	   term_factorized(V, NV, LGs),
 	   NCP = 0
         ).
 
 '$out_neg_answer' :-
-	 ( '$undefined'(print_message(_,_),prolog) -> 
-	    '$present_answer'(user_error,'false.~n', [])
+	 ( '$undefined'(print_message(_,_),prolog) ->
+	    '$present_answer'(user_error,'false.~n')
 	 ;
 	    print_message(help,false)
 	 ),
@@ -578,15 +896,15 @@ true :- true.
 	    fail
 	;
 	    C== 10 -> '$add_nl_outside_console',
-		( '$undefined'(print_message(_,_),prolog) -> 
+		( '$undefined'(print_message(_,_),prolog) ->
 			format(user_error,'yes~n', [])
 	        ;
 		   print_message(help,yes)
 		)
 	;
-	    C== 13 -> 
+	    C== 13 ->
 	    get0(user_input,NC),
-	    '$do_another'(NC)	    
+	    '$do_another'(NC)
 	;
 	    C== -1 -> halt
 	;
@@ -613,7 +931,7 @@ true :- true.
         '$write_vars_and_goals'(NLAnsw, first, FLAnsw).
 
 '$purge_dontcares'([],[]).
-'$purge_dontcares'([Name=_|Vs],NVs) :- 
+'$purge_dontcares'([Name=_|Vs],NVs) :-
 	atom_codes(Name, [C|_]), C is "_", !,
 	'$purge_dontcares'(Vs,NVs).
 '$purge_dontcares'([V|Vs],[V|NVs]) :-
@@ -621,7 +939,7 @@ true :- true.
 
 
 '$prep_answer_var_by_var'([], L, L).
-'$prep_answer_var_by_var'([Name=Value|L], LF, L0) :- 
+'$prep_answer_var_by_var'([Name=Value|L], LF, L0) :-
 	'$delete_identical_answers'(L, Value, NL, Names),
 	'$prep_answer_var'([Name|Names], Value, LF, LI),
 	'$prep_answer_var_by_var'(NL, LI, L0).
@@ -739,8 +1057,45 @@ true :- true.
 	format(user_error,' = ~s',[V]),
 	'$write_output_vars'(VL).
 
+
+/** @pred  + _P_ is nondet
+
+The same as `call( _P_)`. This feature has been kept to provide
+compatibility with C-Prolog. When compiling a goal, YAP
+generates a `call( _X_)` whenever a variable  _X_ is found as
+a goal.
+
+~~~~~{.prolog}
+ a(X) :- X.
+~~~~~
+is converted to:
+
+~~~~~{.prolog}
+ a(X) :- call(X).
+~~~~~
+
+
+*/
+
+/** @pred  call(+ _P_) is iso
+Meta-call predicate.
+
+If _P_ is instantiated to an atom or a compound term, the goal `call(
+_P_)` is executed as if the clause was originally written as _P_
+instead as call( _P_ ), except that any "cut" occurring in _P_ only
+cuts alternatives in the execution of _P_.
+
+
+*/
 call(G) :- '$execute'(G).
 
+/** @pred  incore(+ _P_)
+
+
+The same as call/1.
+
+
+*/
 incore(G) :- '$execute'(G).
 
 %
@@ -751,11 +1106,11 @@ incore(G) :- '$execute'(G).
 	'$call'(G, CP, G, M).
 
 '$user_call'(G, M) :-
-	 ( '$$save_by'(CP1),
+	 ( '$$save_by'(CP),
 	 '$enable_debugging',
 	 '$call'(G, CP, M:G, M),
 	 '$$save_by'(CP2),
-	 (CP1 == CP2 -> ! ; ( true ; '$enable_debugging', fail ) ),
+	 (CP == CP2 -> ! ; ( true ; '$enable_debugging', fail ) ),
 	 '$disable_debugging'
      ;
 	'$disable_debugging',
@@ -773,6 +1128,19 @@ incore(G) :- '$execute'(G).
 	'$stop_creeping'.
 
 
+/** @pred   :_P_ , :_Q_   is iso, meta
+Conjunction of goals (and).
+
+The conjunction is a fundamental construct of Prolog. Example:
+
+~~~~~~~
+ p(X) :- q(X), r(X).
+~~~~~~~
+
+should be read as `p( _X_) if q( _X_) and r( _X_).
+
+
+*/
 ','(X,Y) :-
 	yap_hacks:env_choice_point(CP),
 	'$current_module'(M),
@@ -898,10 +1266,11 @@ not(G) :-    \+ '$execute'(G).
 	    '$call'(B,CP,G0,M)
 	).
 '$call'(\+ X, _CP, _G0, M) :- !,
-	'$current_choice_point'(CP),
-	\+  '$call'(X,CP,G0,M).
+	\+ ('$current_choice_point'(CP),
+	  '$call'(X,CP,G0,M) ).
 '$call'(not(X), _CP, _G0, M) :- !,
-	\+  '$call'(X,CP,G0,M).
+	\+ ('$current_choice_point'(CP),
+	  '$call'(X,CP,G0,M) ).
 '$call'(!, CP, _,_) :- !,
 	'$$cut_by'(CP).
 '$call'([A|B], _, _, M) :- !,
@@ -939,70 +1308,6 @@ not(G) :-    \+ '$execute'(G).
 	'$do_error'(type_error(callable,R),G).
 '$check_callable'(_,_).
 
-% Called by the abstract machine, if no clauses exist for a predicate
-'$undefp'([M|G]) :-
-	'$find_goal_definition'(M, G, NM, NG),
-	'$execute0'(NG, NM).
-
-'$find_goal_definition'(M, G, NM, NG) :-
-	% make sure we do not loop on undefined predicates
-        % for undefined_predicates.
-	'$enter_undefp',
-	(
-	 '$get_undefined_pred'(G, M, Goal, NM)
-	->
-	 '$exit_undefp',
-	 Goal \= fail,
-	 '$complete_goal'(M, Goal, NM, G, NG)
-	;
-	 '$find_undefp_handler'(G, M),
-	 NG = G, NM = M
-	).
-
-'$complete_goal'(M, G, CurMod, G0, NG) :-
-	  (
-	   '$is_metapredicate'(G,CurMod)
-	  ->
-	   '$meta_expansion'(G, CurMod, M, M, NG,[])
-	  ;
-	   NG = G
-	  ).
-
-'$find_undefp_handler'(G,M,NG,user) :-
-	functor(G, Na, Ar),
-	user:exception(undefined_predicate,M:Na/Ar,Action), !,
-	'$exit_undefp',
-	(
-	     Action == fail
-	 ->
-	  NG = fail
-      ;
-	 Action == retry
-     ->
-	 NG = G
-     ;
-	 Action == error
-     ->
-	 '$unknown_error'(M:G)
-     ;
-	 '$do_error'(type_error(atom, Action),M:G)
-     ).
-
-'$find_undefp_handler'(G,M) :-
-	 '$exit_undefp',
-	'$swi_current_prolog_flag'(M:unknown, Action),
-	(
-	 Action == fail
-	->
-	 fail
-	;
-	 Action == warning
-	->
-	 '$unknown_warning'(M:G),
-	 fail
-	;
-	 '$unknown_error'(M:G)
-	).
 
 '$silent_bootstrap'(F) :-
 	'$init_globals',
@@ -1031,6 +1336,7 @@ bootstrap(F) :-
 	),
 	'$loop'(Stream,consult),
 	working_directory(_, OldD),
+	'$current_module'(_, prolog),
 	'$end_consult',
 	(
 	  '$swi_current_prolog_flag'(verbose_load, silent)
@@ -1044,7 +1350,7 @@ bootstrap(F) :-
 	close(Stream).
 
 '$loop'(Stream,exo) :-
-	prolog_flag(agc_margin,Old,0),	
+	prolog_flag(agc_margin,Old,0),
 	prompt1('|     '), prompt(_,'| '),
 	'$current_module'(OldModule),
 	repeat,
@@ -1053,7 +1359,7 @@ bootstrap(F) :-
 	prolog_flag(agc_margin,_,Old),
 	!.
 '$loop'(Stream,db) :-
-	prolog_flag(agc_margin,Old,0),	
+	prolog_flag(agc_margin,Old,0),
 	prompt1('|     '), prompt(_,'| '),
 	'$current_module'(OldModule),
 	repeat,
@@ -1070,21 +1376,12 @@ bootstrap(F) :-
 	!.
 
 '$enter_command'(Stream,Mod,Status) :-
-	read_term(Stream, Command, [module(Mod), variable_names(Vars), term_position(Pos), syntax_errors(dec10), process_comment(true), singletons( Singletons ) ]),
-	( Singletons == []
-         -> 
-	 true
-        ;
-	  get_value('$syntaxchecksinglevar',on)
-        ->
-	 '$sv_warning'(Singletons, Command )
-        ;
-	  true
-        ),
+	read_clause(Stream, Command, [variable_names(Vars), term_position(Pos), syntax_errors(dec10) ]),
 	'$command'(Command,Vars,Pos,Status).
 
 '$abort_loop'(Stream) :-
 	'$do_error'(permission_error(input,closed_stream,Stream), loop).
+
 
 /* General purpose predicates				*/
 
@@ -1112,10 +1409,10 @@ bootstrap(F) :-
 % return two arguments: Expanded0 is the term after "USER" expansion.
 %                       Expanded is the final expanded term.
 %
-'$precompile_term'(Term, Expanded0, Expanded, BodyMod, SourceMod) :-
-%format('[ ~w~n',[Term]),  
-	'$module_expansion'(Term, Expanded0, ExpandedI, BodyMod, SourceMod), !,
-%format('      -> ~w~n',[Expanded0]),  
+'$precompile_term'(Term, Expanded0, Expanded, HeadMod, BodyMod, SourceMod) :-
+%format('[ ~w~n',[Term]),
+	'$module_expansion'(Term, Expanded0, ExpandedI, HeadMod, BodyMod, SourceMod), !,
+%format('      -> ~w~n',[Expanded0]),
 	(
 	 '$access_yap_flags'(9,1)      /* strict_iso on */
         ->
@@ -1124,9 +1421,23 @@ bootstrap(F) :-
         ;
 	 '$expand_array_accesses_in_term'(ExpandedI,Expanded)
 	).
-'$precompile_term'(Term, Term, Term, _, _).
-	
+'$precompile_term'(Term, Term, Term, _, _, _).
 
+
+/** @pred  expand_term( _T_,- _X_)
+
+
+
+This predicate is used by YAP for preprocessing each top level
+term read when consulting a file and before asserting or executing it.
+It rewrites a term  _T_ to a term  _X_ according to the following
+rules: first try term_expansion/2  in the current module, and then try to use the user defined predicate
+`user:term_expansion/2`. If this call fails then the translating process
+for DCG rules is applied, together with the arithmetic optimizer
+whenever the compilation of arithmetic expressions is in progress.
+
+
+*/
 expand_term(Term,Expanded) :-
 	( '$do_term_expansion'(Term,Expanded)
         ->
@@ -1147,7 +1458,7 @@ expand_term(Term,Expanded) :-
 %
 '$expand_array_accesses_in_term'(Expanded0,ExpandedF) :-
 	'$array_refs_compiled',
-	'$c_arrays'(Expanded0,ExpandedF), !.
+	'$arrays':'$c_arrays'(Expanded0,ExpandedF), !.
 '$expand_array_accesses_in_term'(Expanded,Expanded).
 
 
@@ -1156,7 +1467,22 @@ expand_term(Term,Expanded) :-
 
 % at each catch point I need to know:
 % what is ball;
-% where was the previous catch	
+% where was the previous catch
+/** @pred  catch( : _Goal_,+ _Exception_,+ _Action_) is iso
+
+
+The goal `catch( _Goal_, _Exception_, _Action_)` tries to
+execute goal  _Goal_. If during its execution,  _Goal_ throws an
+exception  _E'_ and this exception unifies with  _Exception_, the
+exception is considered to be caught and  _Action_ is executed. If
+the exception  _E'_ does not unify with  _Exception_, control
+again throws the exception.
+
+The top-level of YAP maintains a default exception handler that
+is responsible to capture uncaught exceptions.
+
+
+*/
 catch(G, C, A) :-
 	'$catch'(C,A,_),
 	'$$save_by'(CP0),
@@ -1184,13 +1510,23 @@ catch(G, C, A) :-
 %
 % throw has to be *exactly* after system catch!
 %
+/** @pred  throw(+ _Ball_) is iso
+
+
+The goal `throw( _Ball_)` throws an exception. Execution is
+stopped, and the exception is sent to the ancestor goals until reaching
+a matching catch/3, or until reaching top-level.
+
+@}
+
+*/
 throw(_Ball) :-
 	% use existing ball
 	'$get_exception'(Ball),
 	!,
 	'$jump_env_and_store_ball'(Ball).
 throw(Ball) :-
-	( var(Ball) -> 
+	( var(Ball) ->
 	    '$do_error'(instantiation_error,throw(Ball))
 	;
 	% get current jump point
@@ -1213,7 +1549,7 @@ throw(Ball) :-
 	).
 
 catch_ball(Abort, _) :- Abort == '$abort', !, fail.
-% system defined throws should be ignored by used, unless the
+% system defined throws should be ignored by user, unless the
 % user is hacking away.
 catch_ball(Ball, V) :-
 	var(V),
@@ -1226,7 +1562,7 @@ catch_ball(C, C).
 
 '$run_toplevel_hooks' :-
 	'$swi_current_prolog_flag'(break_level, 0 ),
-	recorded('$toplevel_hooks',H,_), 
+	recorded('$toplevel_hooks',H,_),
 	H \= fail, !,
 	( call(user:H1) -> true ; true).
 '$run_toplevel_hooks'.
@@ -1237,6 +1573,10 @@ catch_ball(C, C).
 	fail.
 '$run_at_thread_start'.
 
+log_event( String, Args ) :-
+	format( atom( M ), String, Args),
+	log_event( M ).
 
-
-
+/**
+@}
+*/

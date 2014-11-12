@@ -125,11 +125,13 @@ exec_top_level(int BootMode, YAP_init_args *iap)
   livegoal = YAP_FullLookupAtom("$live");
   atomfalse = YAP_MkAtomTerm (YAP_FullLookupAtom("$false"));
   while (YAP_GetValue (livegoal) != atomfalse) {
-    YAP_Reset();
+    YAP_Reset( YAP_FULL_RESET );
     do_top_goal (YAP_MkAtomTerm (livegoal));
   }
   YAP_Exit(EXIT_SUCCESS);
 }
+
+FILE *debugf;
 
 #ifdef LIGHT
 int
@@ -143,7 +145,13 @@ main (int argc, char **argv)
   YAP_init_args init_args;
   int i;
 
-
+#if DEBUG_LOCKS
+  char buf[1024];
+  sprintf(buf, "/tmp/yap%d", getpid());
+  debugf= fopen(buf, "w");
+  if (!debugf) fprintf(stderr,"ERROR %s\n", strerror(errno));
+  setvbuf( debugf,NULL, _IOLBF, 1024);
+#endif
   BootMode = init_standard_system(argc, argv, &init_args);
   if (BootMode == YAP_BOOT_ERROR) {
     fprintf(stderr,"[ FATAL ERROR: could not find saved state ]\n");
@@ -151,10 +159,6 @@ main (int argc, char **argv)
   }
   /* Begin preprocessor code */
   if (BootMode != YAP_BOOT_FROM_SAVED_STACKS) {
-    // load the module
-    YAP_Term mod_arg[1];
-    mod_arg[0] = YAP_MkAtomTerm(YAP_LookupAtom("ypp"));
-    YAP_RunGoalOnce(YAP_MkApplTerm(YAP_MkFunctor(YAP_LookupAtom("use_module"),1), 1, mod_arg)); 
     // process the definitions
     for(i=0;i<init_args.def_c;++i) {
       YAP_Term t_args[2],t_goal;
@@ -164,7 +168,7 @@ main (int argc, char **argv)
       YAP_RunGoalOnce(t_goal);
     }
   }
-  YAP_Reset();
+  YAP_Reset( YAP_FULL_RESET );
   /* End preprocessor code */
 
   exec_top_level(BootMode, &init_args);

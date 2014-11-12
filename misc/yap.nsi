@@ -1,4 +1,4 @@
-# YAP install-script (from SWI-Prolog)
+; YAP install-script (based on a similar scrip from SWI-Prolog)
 
 !define TEMP1 $R0 ; Temp variable
 !define EXT    $3 ; Filename extension for Prolog sources
@@ -7,31 +7,31 @@
 !define SHCTX  $6 ; Shell context (current/all)
 !define ARCH   $7 ; Architecture (x86, ia64 or amd64)
 
-!ifdef WIN64
-!define REGKEY SOFTWARE\YAP\Prolog64
-!else
-!define REGKEY SOFTWARE\YAP\Prolog
-!endif
-
-
 RequestExecutionLevel admin
-SetCompressor bzip2
 MiscButtonText "<back" "next>" "abort" "finished"
 
-# Preload files that are needed by the installer itself
-ReserveFile "${NSISDIR}\Plugins\UserInfo.dll"
-ReserveFile "${NSISDIR}\Plugins\InstallOptions.dll"
-ReserveFile "options.ini"
+SetCompressor /FINAL bzip2
+  
+; Preload files that are needed by the installer itself
+ReserveFile "${NSISDIR}\Plugins\x86-unicode\UserInfo.dll"
+ReserveFile "${NSISDIR}\Plugins\x86-unicode\InstallOptions.dll"
+ReserveFile "${OPTIONS}"
 
-InstallDir $PROGRAMFILES\Yap
+!ifdef WIN64
+InstallDir "$PROGRAMFILES64\${TARGET}"
+!else
+InstallDir "$PROGRAMFILES\${TARGET}"
+!endif
 InstallDirRegKey HKLM ${REGKEY} "home"
+
 ComponentText "This will install YAP on your computer."
 DirText "This program will install YAP on your computer.\
          Choose a directory"
 
-LicenseData c:\Yap\share\doc\Yap\Artistic
-LicenseText "YAP is governed by the Artistic License,\
-	but includes code under the GPL and LGPL."
+Icon        ${ROOTDIR}\share\Yap\icons\yap.ico
+LicenseData ${ROOTDIR}\share\doc\Yap\Artistic
+LicenseText "YAP is governed by the Artistic License and LGPL;\
+	it includes code under the GPL and LGPL."
 
 InstType "Typical (all except debug symbols)"	# 1
 InstType "Minimal (no graphics)"		# 2
@@ -43,44 +43,52 @@ Page custom SetCustom "" ": Installation options"
 Page instfiles
 
 Section "Base system (required)"
+
   SectionIn RO			# do not allow to delete this
+  
+!ifdef WIN64
+  SetRegView 64
+!endif
 
   Delete $INSTDIR\bin\*.pdb
 
   SetOutPath $INSTDIR\bin
-  File c:\Yap\bin\yap.exe
-  File c:\Yap\bin\yap.dll
-  File c:\Yap\bin\yap-win.exe
-  File c:\Yap\bin\plterm.dll
+  File ${ROOTDIR}\bin\yap.exe
+  File ${ROOTDIR}\bin\yap.dll
+  File ${ROOTDIR}\bin\yap-win.exe
+  File ${ROOTDIR}\bin\*.dll
 
-  SetOutPath $INSTDIR\bin
+; first, copy library DLLs
+  SetOutPath $INSTDIR\lib\Yap
 ; SYSTEM STUFF
-  File c:\Yap\lib\Yap\*.dll
+  File ${ROOTDIR}\lib\Yap\*.dll
 
-  SetOutPath $INSTDIR\lib
-
-  SetOutPath $INSTDIR\lib
+  SetOutPath $INSTDIR\lib\Yap
 ; SYSTEM STUFF
-  File c:\Yap\lib\Yap\startup.yss
-
-  SetOutPath $INSTDIR\share
+  File ${ROOTDIR}\lib\Yap\startup.yss
+  
+  SetOutPath $INSTDIR\share\Yap
 ; SYSTEM STUFF
-  File /r c:\Yap\share\Yap\*
+  File /r ${ROOTDIR}\share\Yap\*
 
-  SetOutPath $INSTDIR\doc\Yap
-  File c:\Yap\share\doc\Yap\yap.html
-  File c:\Yap\share\doc\Yap\yap.pdf
-  File c:\Yap\share\doc\Yap\Artistic
-  File c:\Yap\share\doc\Yap\README.TXT
-  File c:\Yap\share\doc\Yap\COPYING.TXT
+  SetOutPath $INSTDIR\share\PrologCommons
+; SYSTEM STUFF
+  File /r ${ROOTDIR}\share\PrologCommons
 
-  WriteRegStr HKLM ${REGKEY} "home" "$INSTDIR"
-  WriteRegStr HKLM ${REGKEY} "startup" "$INSTDIR\lib\startup.yss"
-  WriteRegStr HKLM ${REGKEY} "library" "$INSTDIR\share"
+  SetOutPath $INSTDIR\share\doc\Yap
+  File /r ${ROOTDIR}\share\doc\Yap\html\*
+;  File ${ROOTDIR}\share\doc\Yap\refman.pdf
+;  File ${ROOTDIR}\share\doc\Yap\yap.info
+  File ${ROOTDIR}\share\doc\Yap\Artistic
+  File ${ROOTDIR}\share\doc\Yap\README.TXT
+  File ${ROOTDIR}\share\doc\Yap\COPYING
 
   ; Write uninstaller
+!ifdef WIN64
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YAP64" "DisplayName" "YAP64 (remove only)"
+!else
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YAP" "DisplayName" "YAP (remove only)"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YAP" "UninstallString" '"$INSTDIR\uninstall.exe"'
+!endif
   WriteUninstaller "uninstall.exe"
 SectionEnd
 
@@ -88,31 +96,41 @@ SectionEnd
 Section "Start Menu shortcuts"
   SectionIn 1 2 3
   SetOutPath ${CWD}
+!ifdef WIN64
+  StrCpy ${GRP} "YAP64"
+!else
+  StrCpy ${GRP} "YAP"
+!endif
   CreateDirectory "$SMPROGRAMS\${GRP}"
   CreateShortCut "$SMPROGRAMS\${GRP}\YAP-WIN.lnk" \
 		 "$INSTDIR\bin\yap-win.exe" \
 		 "" \
 		 "$INSTDIR\bin\yap-win.exe" \
 		 0
-  SetOutPath $INSTDIR
+  CreateShortCut "$SMPROGRAMS\${GRP}\YAP.lnk" \
+		 "$INSTDIR\bin\yap.exe" \
+		 "" \
+		 "$INSTDIR\bin\yap.exe" \
+		 0
   CreateShortCut "$SMPROGRAMS\${GRP}\Readme.lnk" \
-  		  "$INSTDIR\doc\Yap\README.TXT" "" \
-		  "$INSTDIR\doc\Yap\README.TXT" 0 \
+  		  "$INSTDIR\share\doc\Yap\README.TXT" "" \
+		  "$INSTDIR\share\doc\Yap\README.TXT" 0 \
 		  "SW_SHOWNORMAL" "" "View readme"
   CreateShortCut "$SMPROGRAMS\${GRP}\Manual Html.lnk" \
-  		  "$INSTDIR\doc\Yap\yap.html" "" \
-		  "$INSTDIR\doc\Yap\yap.html" 0 \
+  		  "$INSTDIR\share\doc\Yap\html\index.html" "" \
+		  "$INSTDIR\share\doc\Yap\html\index.html" 0 \
 		  "SW_SHOWNORMAL" "" "View readme"
-  CreateShortCut "$SMPROGRAMS\${GRP}\Manual PDF.lnk" \
-  		  "$INSTDIR\doc\Yap\yap.pdf" "" \
-		  "$INSTDIR\doc\Yap\yap.pdf" 0 \
-		  "SW_SHOWNORMAL" "" "View readme"
+;  CreateShortCut "$SMPROGRAMS\${GRP}\Manual PDF.lnk" \
+;  		  "$INSTDIR\share\doc\Yap\refman.pdf" "" \
+;		  "$INSTDIR\share\doc\Yap\refman.pdf" 0 \
+;		  "SW_SHOWNORMAL" "" "View readme"
   CreateShortCut "$SMPROGRAMS\${GRP}\Uninstall.lnk" \
 		 "$INSTDIR\uninstall.exe" \
 		 "" \
 		 "$INSTDIR\uninstall.exe" \
 		 0
 
+  WriteRegStr HKLM ${REGKEY} fileExtension   ${EXT}
   WriteRegStr HKLM ${REGKEY} group   ${GRP}
   WriteRegStr HKLM ${REGKEY} cwd     ${CWD}
   WriteRegStr HKLM ${REGKEY} context ${SHCTX}
@@ -122,23 +140,46 @@ SectionEnd
 # The uninstaller
 ################################################################
 
-UninstallText "This will uninstall YAP. Hit Uninstall to continue."
+!ifdef WIN64
+  UninstallText "This will uninstall YAP64. Hit Uninstall to continue."
+!else
+  UninstallText "This will uninstall YAP. Hit Uninstall to continue."
+!endif
 
 Section "Uninstall"
-  ReadRegStr ${EXT}   HKLM Software\YAP\Prolog fileExtension
-  ReadRegStr ${GRP}   HKLM Software\YAP\Prolog group
-  ReadRegStr ${SHCTX} HKLM Software\YAP\Prolog context
+!ifdef WIN64
+  SetRegView 64
+!endif
+
+  ReadRegStr ${EXT}   HKLM ${REGKEY} fileExtension
+  StrCmp ${EXT} "" 0 UExt
+    StrCpy ${EXT} "pl"
+  UExt:
+
+  ReadRegStr ${GRP}   HKLM ${REGKEY} group
+  StrCmp ${GRP} "" 0 UHasGroup
+!ifdef WIN64
+    StrCpy ${GRP} "YAP64"
+!else
+    StrCpy ${GRP} "YAP"
+!endif
+  UHasGroup:
+
+  ReadRegStr ${SHCTX} HKLM ${REGKEY} context
+  StrCmp ${SHCTX} "" 0 UHasContext
+    StrCpy ${SHCTX} "all"
+  UHasContext:
 
   StrCmp ${SHCTX} "all" 0 +2
     SetShellVarContext all
 
-  MessageBox MB_YESNO "Delete the following components?$\r$\n \
+  MessageBox MB_YESNO "Delete the following components?\r$\n \
                        Install dir: $INSTDIR$\r$\n \
 		       Extension: ${EXT}$\r$\n \
 		       Program Group ${GRP}" \
 		      IDNO Done
 
-  StrCmp ".${EXT}" "" NoExt
+  StrCmp "${EXT}" "" NoExt
     ReadRegStr $1 HKCR .${EXT} ""
     StrCmp $1 "PrologFile" 0 NoOwn ; only do this if we own it
       ReadRegStr $1 HKCR .${EXT} "backup_val"
@@ -164,7 +205,12 @@ Section "Uninstall"
     MessageBox MB_OK "Folder $INSTDIR doesn't seem to contain Prolog"
 
   Done:
+!ifdef WIN64
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YAP64"
+!else
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YAP"
+!endif
+
     DeleteRegKey HKLM ${REGKEY}
 SectionEnd
 
@@ -178,7 +224,7 @@ Function .onInit
   ;$PLUGINSDIR will automatically be removed when the installer closes
   
   InitPluginsDir
-  File /oname=$PLUGINSDIR\options.ini "options.ini"
+  File /oname=$PLUGINSDIR\options.ini "${OPTIONS}"
 
 FunctionEnd
 
@@ -193,6 +239,9 @@ FunctionEnd
 ################################################################
 
 Function SetCustom
+!ifdef WIN64
+  SetRegView 64
+!endif
 # Basic system info
   Call UserInfo
 
@@ -203,10 +252,16 @@ Function SetCustom
   HasExt:
   WriteINIStr $PLUGINSDIR\options.ini "Field 4" "State" ${EXT}  
 
+  StrCpy ${CWD} $INSTDIR
+
 # Startmenu program group
   ReadRegStr ${GRP} HKLM ${REGKEY} group
   StrCmp ${GRP} "" 0 HasGroup
+!ifdef WIN64
+    StrCpy ${GRP} "YAP64"
+!else
     StrCpy ${GRP} "YAP"
+!endif
   HasGroup:
   WriteINIStr $PLUGINSDIR\options.ini "Field 6" "State" ${GRP}  
 
@@ -219,6 +274,8 @@ Function SetCustom
 # Get the results
   ReadINIStr ${EXT} $PLUGINSDIR\options.ini "Field 4" "State"
   ReadINIStr ${GRP} $PLUGINSDIR\options.ini "Field 6" "State"
+  ReadINIStr ${GRP} $PLUGINSDIR\options.ini "Field 5" "State"
+
 FunctionEnd
 
 Function UserInfo
@@ -258,7 +315,7 @@ FunctionEnd
 
 Function .onInstSuccess
   MessageBox MB_YESNO "Installation complete. View readme?" IDNO NoReadme
-  ExecShell "open" "$INSTDIR\doc\README.TXT"
+  ExecShell "open" "$INSTDIR\share\doc\Yap\README.TXT"
   NoReadme:
 FunctionEnd
 
@@ -268,4 +325,4 @@ Function .onInstFailed
 		    installer, please contact yap-users@sf.net"
 FunctionEnd
 
-outfile "yap-6.3.4-installer.exe"
+outfile "${OUT_DIR}\yap${ABI}-${VERSION}-installer.exe"

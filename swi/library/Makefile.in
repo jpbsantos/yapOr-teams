@@ -31,9 +31,9 @@ PROGRAMS= \
 	$(srcdir)/ctypes.pl \
 	$(srcdir)/date.pl \
 	$(srcdir)/debug.pl \
+	$(srcdir)/edit.pl \
 	$(srcdir)/error.pl \
 	$(srcdir)/main.pl \
-	$(srcdir)/maplist.pl \
 	$(srcdir)/menu.pl \
 	$(srcdir)/nb_set.pl \
 	$(srcdir)/occurs.yap \
@@ -60,6 +60,7 @@ PROGRAMS= \
 	$(srcdir)/www_browser.pl\
 	$(srcdir)/dcg/basics.pl
 
+all:
 
 install: $(PROGRAMS)
 	mkdir -p $(DESTDIR)$(SHAREDIR)/Yap

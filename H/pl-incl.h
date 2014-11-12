@@ -4,17 +4,18 @@
 #define PL_INCL_H 1
 
 #ifndef __WINDOWS__
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MSYS__)
 #define __WINDOWS__ 1
 #endif
 #endif
 
 #ifdef __WINDOWS__
-#if HAVE_WINSOCK2_H
+
+#ifndef __MSYS__
 #include <winsock2.h>
 #endif
-
 #include <windows.h>
+
 
 #if HAVE_XOS_H
 #include <xos.h>			/* Windows POSIX enhancements */
@@ -34,7 +35,7 @@
 /* include all stuff that is exported to yap */
 #include "pl-shared.h"
 
-#define PLVERSION YAP_VERSION
+#define PLVERSION YAP_NUMERIC_VERSION
 #define PLNAME "yap"
 
 #define SWIP "swi_"
@@ -57,14 +58,6 @@ typedef struct pred_entry *      Procedure;      /* predicate */
 #endif
 #ifdef H
 #undef H
-#endif
-
-// used by swi
-#ifdef SIZEOF_INT_P
-#define SIZEOF_VOIDP SIZEOF_INT_P
-#define SIZEOF_LONG  SIZEOF_LONG_INT
-#else
-bad config
 #endif
 
 /* swi code called from pl-incl.h */
@@ -110,6 +103,16 @@ typedef int			Char;		/* char that can pass EOF */
 
 #define exception_term         (LD->exception.term)
 
+#ifdef Suser_input
+#undef Suser_input
+#endif
+#ifdef Suser_output
+#undef Suser_output
+#endif
+#ifdef Suser_error
+#undef Suser_error
+#endif
+
 #define Suser_input             (LD->IO.streams[0])
 #define Suser_output            (LD->IO.streams[1])
 #define Suser_error             (LD->IO.streams[2])
@@ -124,8 +127,6 @@ typedef int			Char;		/* char that can pass EOF */
 #define source_line_pos         (LD->read_source.position.linepos)
 #define source_char_no          (LD->read_source.position.charno)
 #define source_byte_no          (LD->read_source.position.byteno)
-
-#define debugstatus            (LD->_debugstatus)
 
 #if SIZE_DOUBLE==SIZEOF_INT_P
 #define WORDS_PER_DOUBLE 1
@@ -229,19 +230,6 @@ typedef struct record *		Record;
 
 #define MAXSIGNAL	64
 
-#define SIG_PROLOG_OFFSET	32	/* Start of Prolog signals */
-
-#define SIG_EXCEPTION	  (SIG_PROLOG_OFFSET+0)
-#ifdef O_ATOMGC
-#define SIG_ATOM_GC	  (SIG_PROLOG_OFFSET+1)
-#endif
-#define SIG_GC		  (SIG_PROLOG_OFFSET+2)
-#ifdef O_PLMT
-#define SIG_THREAD_SIGNAL (SIG_PROLOG_OFFSET+3)
-#endif
-#define SIG_FREECLAUSES	  (SIG_PROLOG_OFFSET+4)
-#define SIG_PLABORT	  (SIG_PROLOG_OFFSET+5)
-
 #define LOCAL_OVERFLOW    (-1)
 #define GLOBAL_OVERFLOW   (-2)
 #define TRAIL_OVERFLOW    (-3)
@@ -317,10 +305,6 @@ typedef struct
   word culprit;				/* for CVT_nocode/CVT_nochar */
 } CVT_result;
 
-#define MAXNEWLINES	    5		/* maximum # of newlines in atom */
-
-#define LONGATOM_CHECK	    0x01	/* read/1: error on intptr_t atoms */
-
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Operator types.  NOTE: if you change OP_*, check operatorTypeToAtom()!
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -339,8 +323,6 @@ Operator types.  NOTE: if you change OP_*, check operatorTypeToAtom()!
 #define OP_XFX	(0x50|OP_INFIX)
 #define OP_XFY	(0x60|OP_INFIX)
 #define OP_YFX	(0x70|OP_INFIX)
-
-#define CHARESCAPE		(0x0004) /* module */
 
 		 /*******************************
 		 *	       COMPARE		*
@@ -467,6 +449,7 @@ extern int fileerrors;
 
 extern int ttymode;
 
+
 #define CHARESCAPE_FEATURE	  0x00001 /* handle \ in atoms */
 #define GC_FEATURE		  0x00002 /* do GC */
 #define TRACE_GC_FEATURE	  0x00004 /* verbose gc */
@@ -589,24 +572,20 @@ extern IOENC initEncoding(void);
 
 /**** stuff from pl-error.c ****/
 extern int PL_get_bool_ex(term_t t, int *i);
-extern int PL_get_nchars_ex(term_t t, size_t *len, char **s, unsigned int flags);
 extern int PL_get_chars_ex(term_t t, char **s, unsigned int flags);
 extern int PL_get_integer_ex(term_t t, int *i);
+extern int PL_get_module_ex(term_t t, module_t *m);
+extern int PL_get_nchars_ex(term_t t, size_t *len, char **s, unsigned int flags);
 extern int PL_get_long_ex(term_t t, long *i);
 extern int PL_get_int64_ex(term_t t, int64_t *i);
 extern int PL_get_intptr_ex(term_t t, intptr_t *i);
-extern int PL_get_bool_ex(term_t t, int *i);
 extern int PL_get_float_ex(term_t t, double *f);
 extern int PL_get_char_ex(term_t t, int *p, int eof);
 extern int PL_unify_list_ex(term_t l, term_t h, term_t t);
 extern int PL_unify_nil_ex(term_t l);
 extern int PL_get_list_ex(term_t l, term_t h, term_t t);
 extern int PL_get_nil_ex(term_t l);
-extern int PL_unify_bool_ex(term_t t, bool val);
-extern int PL_unify_bool_ex(term_t t, bool val);
-extern int PL_get_bool_ex(term_t t, int *i);
-extern int PL_get_integer_ex(term_t t, int *i);
-extern int PL_get_module_ex(term_t t, module_t *m);
+extern int PL_unify_bool_ex(term_t t, int val);
 
 /**** stuff from pl-file.c ****/
 extern void initIO(void);
@@ -788,11 +767,11 @@ COMMON(int)		raiseStackOverflow(int overflow);
 COMMON(int)		PL_qualify(term_t raw, term_t qualified);
 
 static inline word
-setBoolean(int *flag, term_t old, term_t new)
-{ if ( !PL_unify_bool_ex(old, *flag) ||
-       !PL_get_bool_ex(new, flag) )
+setBoolean(bool *flag, term_t old, term_t new)
+{ int fl = *flag; if ( !PL_unify_bool_ex(old, fl) ||
+       !PL_get_bool_ex(new, &fl) )
     fail;
-
+  *flag = fl;
   succeed;
 }
 
@@ -890,6 +869,7 @@ void PlMessage(const char *fm, ...);
 const char *WinError(void);
 word pl_win_exec(term_t cmd, term_t how);
 foreign_t pl_win_module_file(term_t module, term_t file);
+int PL_w32_wrap_ansi_console(void);
 
 #ifdef EMULATE_DLOPEN
 	/* file is in UTF-8, POSIX path */
@@ -919,6 +899,7 @@ extern const PL_extension PL_predicates_from_write[];
 extern const PL_extension PL_predicates_from_prologflag[];
 extern const PL_extension PL_predicates_from_win[];
 extern const PL_extension PL_predicates_from_locale[];
+extern const PL_extension PL_predicates_from_system[];
 
 #define enableThreads(val) FALSE
 

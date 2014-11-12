@@ -18,10 +18,16 @@
 static char     SccsId[] = "%W% %G%";
 #endif
 
-/*
- * This file implements arithmetic operations 
- *
- */
+/**
+   @file eval.c
+
+   @defgroup arithmetic_preds Arithmetic Predicates
+   @ingroup arithmetic
+
+   @{
+*/
+
+
 #include "Yap.h"
 #include "Yatom.h"
 #include "YapHeap.h"
@@ -32,6 +38,9 @@ static char     SccsId[] = "%W% %G%";
 #include <stdlib.h>
 #if HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#if HAVE_FENV_H
+#include <fenv.h>
 #endif
 
 static Term Eval(Term t1 USES_REGS);
@@ -86,8 +95,8 @@ get_matrix_element(Term t1, Term t2 USES_REGS)
 static Term
 Eval(Term t USES_REGS)
 {
+
   if (IsVarTerm(t)) {
-    LOCAL_ArithError = TRUE;
     return Yap_ArithError(INSTANTIATION_ERROR,t,"in arithmetic");
   } else if (IsNumTerm(t)) {
     return t;
@@ -97,14 +106,27 @@ Eval(Term t USES_REGS)
 
     if (EndOfPAEntr(p = RepExpProp(Yap_GetExpProp(name, 0)))) {
       /* error */
+      Term ti[2];
+
+      /* error */
+      ti[0] = t;
+      ti[1] = MkIntTerm(0);
+      t = Yap_MkApplTerm(FunctorSlash, 2, ti);
+
       return Yap_ArithError(TYPE_ERROR_EVALUABLE, t,
-			    "atom %s for arithmetic expression",
+			    "atom %s in arithmetic expression",
 			    RepAtom(name)->StrOfAE);
     }
     return Yap_eval_atom(p->FOfEE);
   } else if (IsApplTerm(t)) {
     Functor fun = FunctorOfTerm(t);
-    if ((Atom)fun == AtomFoundVar) {
+    if (fun == FunctorString) {
+      const char *s = StringOfTerm(t);
+      if (s[1] == '\0')
+	return MkIntegerTerm(s[0]);
+      return Yap_ArithError(TYPE_ERROR_EVALUABLE, t,
+			    "string in arithmetic expression");
+    } else if ((Atom)fun == AtomFoundVar) {
       return Yap_ArithError(TYPE_ERROR_EVALUABLE, TermNil,
 			    "cyclic term in arithmetic expression");
     } else {
@@ -156,9 +178,8 @@ Eval(Term t USES_REGS)
 }
 
 Term
-Yap_InnerEval(Term t)
+Yap_InnerEval__(Term t USES_REGS)
 {
-  CACHE_REGS
   return Eval(t PASS_REGS);
 }
 
@@ -178,54 +199,97 @@ BEAM_is(void)
 
 #endif
 
+/**
+@{
+   @pred is( X:number, + Y:ground) is det
+
+   This predicate succeeds iff the result of evaluating the expression
+   _Y_ unifies with  _X_. This is the predicate normally used to
+   perform evaluation of arithmetic expressions:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+X is 2+3*4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    succeeds with `X = 14`.
+
+    Consult @ref arithmetic_operators for the complete list of arithmetic_operators 
+
+*/
+
+/// @memberof is/2
 static Int
 p_is( USES_REGS1 )
 {				/* X is Y	 */
-  Term out = 0L;
-  
-  while (!(out = Eval(Deref(ARG2) PASS_REGS))) {
-    if (LOCAL_Error_TYPE == RESOURCE_ERROR_STACK) {
+  Term out;
+  yap_error_number err;
+
+  Term t = Deref(ARG2);
+  if (IsVarTerm(t)) {
+    Yap_EvalError(INSTANTIATION_ERROR,t, "X is Y");
+    return(FALSE);
+  }
+  Yap_ClearExs();
+  do {
+    out = Yap_InnerEval(Deref(ARG2));
+    if ((err = Yap_FoundArithError()) == YAP_NO_ERROR)
+      break;
+    if (err == RESOURCE_ERROR_STACK) {
       LOCAL_Error_TYPE = YAP_NO_ERROR;
       if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, CP)) {
-	Yap_Error(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
+	Yap_EvalError(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
 	return FALSE;
       }
     } else {
-      Yap_Error(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+      Yap_EvalError(err, ARG2, "X is Exp");
       return FALSE;
     }
-  }
+  } while (TRUE);
   return Yap_unify_constant(ARG1,out);
 }
 
+//@}
+
+/**
+ @pred isnan(? X:float) is det
+
+   Interface to the IEE754 `isnan` test.
+*/
+
+/// @memberof isnan/1
 static Int
 p_isnan( USES_REGS1 )
-{				/* X is Y	 */
+{				/* X isnan Y	 */
   Term out = 0L;
   
   while (!(out = Eval(Deref(ARG1) PASS_REGS))) {
     if (LOCAL_Error_TYPE == RESOURCE_ERROR_STACK) {
       LOCAL_Error_TYPE = YAP_NO_ERROR;
       if (!Yap_gcl(LOCAL_Error_Size, 1, ENV, CP)) {
-	Yap_Error(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
+	Yap_EvalError(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
 	return FALSE;
       }
     } else {
-      Yap_Error(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+      Yap_EvalError(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
       return FALSE;
     }
   }
   if (IsVarTerm(out)) {
-    Yap_Error(INSTANTIATION_ERROR, out, "isnan/1");
+    Yap_EvalError(INSTANTIATION_ERROR, out, "isnan/1");
     return FALSE;
   }
   if (!IsFloatTerm(out)) {
-    Yap_Error(TYPE_ERROR_FLOAT, out, "isnan/1");
+    Yap_EvalError(TYPE_ERROR_FLOAT, out, "isnan/1");
     return FALSE;
   }
   return isnan(FloatOfTerm(out));
 }
 
+/**
+   @pred isinf(? X:float) is det</b>
+
+   Interface to the IEE754 `isinf` test.
+*/
+
+/// @memberof isnan/1
 static Int
 p_isinf( USES_REGS1 )
 {                               /* X is Y        */
@@ -235,25 +299,35 @@ p_isinf( USES_REGS1 )
     if (LOCAL_Error_TYPE == RESOURCE_ERROR_STACK) {
       LOCAL_Error_TYPE = YAP_NO_ERROR;
       if (!Yap_gcl(LOCAL_Error_Size, 1, ENV, CP)) {
-        Yap_Error(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
+        Yap_EvalError(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
         return FALSE;
       }
     } else {
-      Yap_Error(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+      Yap_EvalError(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
       return FALSE;
     }
   }
   if (IsVarTerm(out)) {
-    Yap_Error(INSTANTIATION_ERROR, out, "isinf/1");
+    Yap_EvalError(INSTANTIATION_ERROR, out, "isinf/1");
     return FALSE;
   }
   if (!IsFloatTerm(out)) {
-    Yap_Error(TYPE_ERROR_FLOAT, out, "isinf/1");
+    Yap_EvalError(TYPE_ERROR_FLOAT, out, "isinf/1");
     return FALSE;
   }
   return isinf(FloatOfTerm(out));
 }
 
+/**
+@{   @pred logsum(+ Log1:float, + Log2:float, - Out:float ) is det
+
+True if  _Log1_ is the logarithm of the positive number  _A1_,
+ _Log2_ is the logarithm of the positive number  _A2_, and
+ _Out_ is the logarithm of the sum of the numbers  _A1_ and
+ _A2_. Useful in probability computation.
+*/
+
+/// @memberof logsum/3
 static Int
 p_logsum( USES_REGS1 )
 {                               /* X is Y        */
@@ -279,11 +353,11 @@ p_logsum( USES_REGS1 )
 	if (LOCAL_Error_TYPE == RESOURCE_ERROR_STACK) {
 	  LOCAL_Error_TYPE = YAP_NO_ERROR;
 	  if (!Yap_gcl(LOCAL_Error_Size, 1, ENV, CP)) {
-	    Yap_Error(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
+	    Yap_EvalError(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
 	    return FALSE;
 	  }
 	} else {
-	  Yap_Error(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+	  Yap_EvalError(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
 	  return FALSE;
 	}
       }
@@ -307,11 +381,11 @@ p_logsum( USES_REGS1 )
 	if (LOCAL_Error_TYPE == RESOURCE_ERROR_STACK) {
 	  LOCAL_Error_TYPE = YAP_NO_ERROR;
 	  if (!Yap_gcl(LOCAL_Error_Size, 2, ENV, CP)) {
-	    Yap_Error(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
+	    Yap_EvalError(RESOURCE_ERROR_STACK, ARG2, LOCAL_ErrorMessage);
 	    return FALSE;
 	  }
 	} else {
-	  Yap_Error(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+	  Yap_EvalError(LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
 	  return FALSE;
 	}
       }
@@ -326,12 +400,16 @@ p_logsum( USES_REGS1 )
   }
 }
 
+// @}
+
 Int
 Yap_ArithError(yap_error_number type, Term where, char *format,...)
 {
   CACHE_REGS
   va_list ap;
 
+  if (LOCAL_ArithError)
+    return 0L;
   LOCAL_ArithError = TRUE;
   LOCAL_Error_TYPE = type;
   LOCAL_Error_Term = where;
@@ -351,6 +429,50 @@ Yap_ArithError(yap_error_number type, Term where, char *format,...)
   return 0L;
 }
 
+yamop *
+Yap_EvalError(yap_error_number type, Term where, char *format,...)
+{
+  CACHE_REGS
+  va_list ap;
+
+  if (LOCAL_ArithError) {
+      LOCAL_ArithError = YAP_NO_ERROR;
+    return Yap_Error( LOCAL_Error_TYPE, LOCAL_Error_Term, LOCAL_ErrorMessage);
+  }
+  
+  if (!LOCAL_ErrorMessage)
+    LOCAL_ErrorMessage = LOCAL_ErrorSay;
+  va_start (ap, format);
+  if (format != NULL) {
+#if   HAVE_VSNPRINTF
+    (void) vsnprintf(LOCAL_ErrorMessage, MAX_ERROR_MSG_SIZE, format, ap);
+#else
+    (void) vsprintf(LOCAL_ErrorMessage, format, ap);
+#endif
+  } else {
+    LOCAL_ErrorMessage[0] = '\0';
+  }
+  va_end (ap);
+  return Yap_Error( type, where, LOCAL_ErrorMessage);
+}
+
+/**
+
+   @{
+ 
+  @pred between(+ Low:int, + High:int, ? Value:int) is nondet
+
+   _Low_ and  _High_ are integers,  _High_ \>= _Low_. If
+   _Value_ is an integer,  _Low_ =\< _Value_
+   =\< _High_. When  _Value_ is a variable it is successively
+   bound to all integers between  _Low_ and  _High_. If
+   _High_ is inf or infinite between/3 is true iff
+   _Value_ \>=  _Low_, a feature that is particularly interesting
+   for generating integers from a certain value.
+
+*/
+
+/// @memberof between/3
 static Int cont_between( USES_REGS1 )
 {
   Term t1 = EXTRA_CBACK_ARG(3,1);
@@ -385,6 +507,7 @@ static Int cont_between( USES_REGS1 )
   }
 }
 
+/// @memberof between/3
 static Int
 init_between( USES_REGS1 )
 {
@@ -392,23 +515,23 @@ init_between( USES_REGS1 )
   Term t2 = Deref(ARG2);
 
   if (IsVarTerm(t1)) {
-    Yap_Error(INSTANTIATION_ERROR, t1, "between/3");
+    Yap_EvalError(INSTANTIATION_ERROR, t1, "between/3");
     return FALSE;
   }
   if (IsVarTerm(t2)) {
-    Yap_Error(INSTANTIATION_ERROR, t1, "between/3");
+    Yap_EvalError(INSTANTIATION_ERROR, t1, "between/3");
     return FALSE;
   }
   if (!IsIntegerTerm(t1) && 
       !IsBigIntTerm(t1)) {
-    Yap_Error(TYPE_ERROR_INTEGER, t1, "between/3");
+    Yap_EvalError(TYPE_ERROR_INTEGER, t1, "between/3");
     return FALSE;
   }
   if (!IsIntegerTerm(t2) && 
       !IsBigIntTerm(t2) &&
       t2 != MkAtomTerm(AtomInf) &&
       t2 != MkAtomTerm(AtomInfinity)) {
-    Yap_Error(TYPE_ERROR_INTEGER, t2, "between/3");
+    Yap_EvalError(TYPE_ERROR_INTEGER, t2, "between/3");
     return FALSE;
   }
   if (IsIntegerTerm(t1) && IsIntegerTerm(t2)) {
@@ -420,7 +543,7 @@ init_between( USES_REGS1 )
     if (!IsVarTerm(t3)) {
       if (!IsIntegerTerm(t3)) {
 	if (!IsBigIntTerm(t3)) {
-	  Yap_Error(TYPE_ERROR_INTEGER, t3, "between/3");
+	  Yap_EvalError(TYPE_ERROR_INTEGER, t3, "between/3");
 	  return FALSE;
 	}
 	cut_fail();
@@ -444,7 +567,7 @@ init_between( USES_REGS1 )
     if (!IsVarTerm(t3)) {
       if (!IsIntegerTerm(t3)) {
 	if (!IsBigIntTerm(t3)) {
-	  Yap_Error(TYPE_ERROR_INTEGER, t3, "between/3");
+	  Yap_EvalError(TYPE_ERROR_INTEGER, t3, "between/3");
 	  return FALSE;
 	}
 	cut_fail();
@@ -461,7 +584,7 @@ init_between( USES_REGS1 )
 
     if (!IsVarTerm(t3)) {
       if (!IsIntegerTerm(t3) && !IsBigIntTerm(t3)) {
-	Yap_Error(TYPE_ERROR_INTEGER, t3, "between/3");
+	Yap_EvalError(TYPE_ERROR_INTEGER, t3, "between/3");
 	return FALSE;
       }
       if (Yap_acmp(t3, t1 PASS_REGS) >= 0 && Yap_acmp(t2,t3 PASS_REGS) >= 0 && P != FAILCODE)
@@ -480,6 +603,11 @@ init_between( USES_REGS1 )
   return cont_between( PASS_REGS1 );
 }
 
+/**
+ *
+ * @}
+*/
+
 void
 Yap_InitEval(void)
 {
@@ -494,3 +622,7 @@ Yap_InitEval(void)
   Yap_InitCPredBack("between", 3, 2, init_between, cont_between, 0);
 }
 
+/**
+ *
+ * @}
+*/

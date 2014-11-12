@@ -20,7 +20,8 @@
 		[{}/1,
 		 clpbn_flag/2,
 		 clpbn_flag/3,
-		 set_clpbn_flag/2
+		 set_clpbn_flag/2,
+		 op(500, xfy, with)
 		]).
 
 :- use_module(library('clpbn/learning/em')).
@@ -47,6 +48,7 @@
 		 clpbn_tabled_dynamic/1
 		]).
 
+:- dynamic '$aleph_global'/2.
 %
 % Tell Aleph not to use default solver during saturation
 %

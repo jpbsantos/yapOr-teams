@@ -42,7 +42,7 @@ DYNAMIC =
 CFLAGS = @CFLAGS@
 INCLUDE = -I@abs_top_builddir@ @CUDD_CPPFLAGS@
 LINKFLAGS = -lm
-LINKLIBS =  @CUDD_LDFLAGS@
+LINKLIBS =  @CUDD_LIBS@
 
 default: problogbdd
 
@@ -59,7 +59,7 @@ clean:
 	rm -f *.o problogbdd
 
 install: default
-	$(INSTALL_PROGRAM) problogbdd $(DESTDIR)$(SHAREDIR)/Yap
+	$(INSTALL_PROGRAM) problogbdd $(DESTDIR)$(BINDIR)
 
 install-examples:
 

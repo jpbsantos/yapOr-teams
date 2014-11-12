@@ -30,12 +30,13 @@
 */
 
 :- module('$win_menu',
-	  [ win_insert_menu_item/4,	% +PopupName, +Item, +Before, :Goal
-	    win_has_menu/0		% Test whether we have menus
+	  [ % win_insert_menu_item/4,	% +PopupName, +Item, +Before, :Goal
+	    % win_has_menu/0		% Test whether we have menus
 	  ]).
 
 :- meta_predicate
-	win_insert_menu_item(+,+,+,:).
+        prolog:win_insert_menu_item(+,+,+,0).
+
 %:- multifile
 %	prolog:on_menu/1.
 :- dynamic

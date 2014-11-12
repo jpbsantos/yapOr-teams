@@ -9,7 +9,7 @@
 
 :- set_prolog_flag(unknown,error).
 :- set_prolog_flag(profiling,on).
-:- set_prolog_flag(debug,on).
+:- set_prolog_flag(debug,true).
 :- set_prolog_flag(discontiguous_warnings,on).
 :- set_prolog_flag(single_var_warnings,on).
 :-source.

@@ -136,7 +136,7 @@ UInt		pred_hash_table_size	PredHashTableSize	void
 
 /* Well-Known Predicates */
 struct pred_entry *creep_code		CreepCode		MkPred AtomCreep 1 PROLOG_MODULE
-struct pred_entry *undef_code		UndefCode		MkPred AtomUndefp 1 PROLOG_MODULE
+struct pred_entry *undef_code		UndefCode		MkPred AtomUndefp 2 PROLOG_MODULE
 struct pred_entry *spy_code		SpyCode			MkPred AtomSpy 1 PROLOG_MODULE
 struct pred_entry *pred_fail		PredFail		MkPred AtomFail 0 PROLOG_MODULE
 struct pred_entry *pred_true		PredTrue		MkPred AtomTrue 0 PROLOG_MODULE
@@ -332,7 +332,7 @@ struct record_list *yap_records		Yap_Records		=NULL		RestoreYapRecords()
 
 /* SWI atoms and functors */
 Atom		*swi_atoms	SWI_Atoms		InitSWIAtoms() RestoreSWIAtoms()
-Functor		swi_functors[N_SWI_FUNCTORS] SWI_Functors	void void
+Functor		*swi_functors   SWI_Functors	void void
 
 struct swi_reverse_hash	swi_reverse_hash[N_SWI_HASH] SWI_ReverseHash	void void
 

@@ -21,7 +21,7 @@
 /* consulting files */
 
 typedef union CONSULT_OBJ {
-  char *filename;
+  const char *filename;
   int mode;
   Prop  p;
   UInt c;
@@ -33,7 +33,7 @@ typedef union CONSULT_OBJ {
 #define ASSEMBLING_INDEX	1
 #define ASSEMBLING_EINDEX	2
 
-#define NextDynamicClause(X)	(((yamop *)X)->u.Otapl.d)
+#define NextDynamicClause(X)	(((yamop *)X)->y_u.Otapl.d)
 
 #define PredFirstClause		0
 #define PredMiddleClause	1
@@ -202,7 +202,7 @@ INLINE_ONLY EXTERN inline   CELL *
 EXO_OFFSET_TO_ADDRESS(struct index_t *it, BITS32  off)
 {
   if (off == 0L) 
-    return NULL;
+    return (CELL *)NULL;
   return (it->cls)+(off-1)*it->arity;
 }
 
@@ -435,10 +435,8 @@ LogUpdClause   *Yap_new_ludbe(Term, PredEntry *, UInt);
 Term        Yap_LUInstance(LogUpdClause *, UInt);
 
 /* udi.c */
-void         Yap_udi_init(void);
 int          Yap_new_udi_clause(PredEntry *, yamop *, Term);
 yamop       *Yap_udi_search(PredEntry *);
-void         Yap_udi_abolish(PredEntry *p);
 
 #ifdef DEBUG
 void    Yap_bug_location(yamop *);

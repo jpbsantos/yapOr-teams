@@ -22,6 +22,7 @@
 */
 
 #if defined(__WINDOWS__) || defined(__MINGW32__)
+#include <stdint.h>
 #include "windows/uxnt.h"
 #ifdef _YAP_NOT_INSTALLED_
 #include <config.h>
@@ -37,6 +38,18 @@
 #else
 #include <config.h>
 #endif
+
+#if __ANDROID__
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
+#include <android/log.h>
+#else
+#define __android_log_print(i,loc,msg,...)
+#define ANDROID_LOG_INFO 0
+#define ANDROID_LOG_ERROR 0
+#define ANDROID_LOG_DEBUG 0
+#endif
+
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 This modules defines the  SWI-Prolog  I/O   streams.  These  streams are
@@ -57,7 +70,9 @@ locking is required.
 #endif
 
 #define PL_KERNEL 1
-#define O_LOCALE 1
+#if HAVE_LOCALE_H && HAVE_SETLOCALE
+//#define O_LOCALE 1
+#endif
 #include <wchar.h>
 #define NEEDS_SWINSOCK
 #include "SWI-Stream.h"
@@ -95,6 +110,10 @@ locking is required.
 #include <assert.h>
 #ifdef SYSLIB_H
 #include SYSLIB_H
+#endif
+
+#if THREADS
+#define O_PLMT 1
 #endif
 
 #define ROUND(p, n) ((((p) + (n) - 1) & ~((n) - 1)))
@@ -257,7 +276,9 @@ S__removebuf(IOSTREAM *s)
   return 0;
 }
 
-
+#ifdef DEBUGX
+#define DEBUG_IO_LOCKS 1
+#endif
 #ifdef DEBUG_IO_LOCKS
 static char *
 Sname(IOSTREAM *s)
@@ -302,7 +323,7 @@ Slock(IOSTREAM *s)
   }
 
 #ifdef DEBUG_IO_LOCKS
-  if ( s->locks > 2 )
+  if ( DEBUG || s->locks > 2 )
   { printf("  Lock [%d]: %s: %d locks", PL_thread_self(), Sname(s), s->locks+1);
     print_trace();
   }
@@ -543,7 +564,6 @@ S__fillbuf(IOSTREAM *s)
   if ( s->flags & SIO_NBUF )
   { char chr;
     ssize_t n;
-
     n = (*s->functions->read)(s->handle, &chr, 1);
     if ( n == 1 )
     { c = char_to_int(chr);
@@ -576,7 +596,7 @@ S__fillbuf(IOSTREAM *s)
       len = s->bufsize;
     }
 
-    n = (*s->functions->read)(s->handle, s->limitp, len);
+  n = (*s->functions->read)(s->handle, s->limitp, len);
     if ( n > 0 )
     { s->limitp += n;
       c = char_to_int(*s->bufp++);
@@ -633,6 +653,7 @@ update_linepos(IOSTREAM *s, int c)
       break;
     case '\t':
       p->linepos |= 7;
+      /*FALLTHROUGH*/
     default:
       p->linepos++;
   }
@@ -735,7 +756,7 @@ unget_byte(int c, IOSTREAM *s)
 
   *--s->bufp = c;
   if ( p )
-  { p->charno--;			/* FIXME: not correct */
+  { p->charno--;			/* sz */
     p->byteno--;
     if ( c == '\n' )
       p->lineno--;
@@ -782,7 +803,11 @@ reperror(int c, IOSTREAM *s)
   return -1;
 }
 
-
+#if __ANDROID__
+//hack!!!!
+   char *Yap_AndroidBufp = NULL;
+   void( *Yap_DisplayWithJava)(int c);
+#endif
 
 static int
 put_code(int c, IOSTREAM *s)
@@ -861,6 +886,13 @@ put_code(int c, IOSTREAM *s)
       unsigned char *q = (unsigned char *)&chr;
       unsigned char *e = &q[sizeof(pl_wchar_t)];
 
+#if __WINDOWS__
+  if (s == Soutput || s == Serror ) {
+    if (!(*s->functions->write)(s->handle, (char *)q, sizeof(wchar_t)))
+      return -1;
+    break;
+   }
+#endif
       while(q<e)
       { if ( put_byte(*q++, s) < 0 )
 	  return -1;
@@ -874,8 +906,15 @@ put_code(int c, IOSTREAM *s)
 
 
   s->lastc = c;
+#if __ANDROID__
 
-  if ( c == '\n' && (s->flags & SIO_LBUF) )
+  if (Yap_AndroidBufp && (s == Soutput || s == Serror) ) {
+     (Yap_DisplayWithJava)(c);
+   }
+
+#endif
+
+  if ( (c == '\n' && (s->flags & SIO_LBUF) ) )
   { if ( S__flushbuf(s) < 0 )
       return -1;
   }
@@ -899,7 +938,6 @@ Sputcode(int c, IOSTREAM *s)
   { if ( put_code('\r', s) < 0 )
       return -1;
   }
-
   return put_code(c, s);
 }
 
@@ -1342,6 +1380,7 @@ ScheckBOM(IOSTREAM *s)
       return 0;				/* empty stream */
     s->bufp--;
   }
+  return 0;
 }
 
 
@@ -1799,8 +1838,10 @@ Sclose(IOSTREAM *s)
 
   if ( s->message )
     free(s->message);
+#if O_LOCALE
   if ( s->locale )
     releaseLocale(s->locale);
+#endif
   if ( s->references == 0 )
     unallocStream(s);
   else
@@ -2647,6 +2688,7 @@ Sread_file(void *handle, char *buf, size_t size)
 
     return bytes;
   }
+  return -1;
 }
 
 
@@ -2662,7 +2704,6 @@ Swrite_file(void *handle, char *buf, size_t size)
 #else
     bytes = write((int)h, buf, size);
 #endif
-
     if ( bytes == -1 && errno == EINTR )
     { if ( PL_handle_signals() < 0 )
       { errno = EPLEXCEPTION;
@@ -2869,7 +2910,17 @@ Sopen_file(const char *path, const char *how)
   enum {lnone=0,lread,lwrite} lock = lnone;
   IOSTREAM *s;
   IOENC enc = ENC_UNKNOWN;
+#if __WINDOWS__
   int wait = TRUE;
+#endif
+
+#if __ANDROID__
+    if (strstr(path, "/assets/") == path) {
+	AAssetManager *Yap_assetManager( void );
+	char * p = (char *)path + strlen("/assets/");
+	return Sopen_asset( p, how-1, Yap_assetManager());
+    }
+#endif
 
   for( ; *how; how++)
   { switch(*how)
@@ -2880,8 +2931,10 @@ Sopen_file(const char *path, const char *how)
       case 'r':				/* no record */
 	flags &= ~SIO_RECORDPOS;
         break;
-      case 'L':				/* lock r: read, w: write */
+#if __WINDOWS__
+     case 'L':				/* lock r: read, w: write */
 	wait = FALSE;
+#endif
         /*FALLTHROUGH*/
       case 'l':				/* lock r: read, w: write */
 	if ( *++how == 'r' )
@@ -3174,6 +3227,171 @@ Sopen_pipe(const char *command, const char *type)
 }
 
 #endif /*HAVE_POPEN*/
+
+
+#if __ANDROID__
+
+		 /*******************************
+		 *	  ASSET FILES		*
+		 *******************************/
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Asset files provide a mechanism for accesing file resources stored in
+an Android application pack.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+static ssize_t
+Swrite_asset(void *handle, char *buf, size_t size)
+{
+  return -1L;
+}
+
+
+static ssize_t
+Sread_asset(void *handle, char *buf, size_t size)
+{
+  int res = AAsset_read((AAsset* )handle, (void* )buf, size);
+  if (res < 0) {
+      errno = ENOSPC;			/* signal error */
+  }
+  return res;
+}
+
+
+static long
+Sseek_asset(void *handle, long offset, int whence)
+{ int res = AAsset_seek((AAsset* )handle, (off_t)offset, whence);
+  if (res == (off_t)-1) {
+      errno = ENOSPC;			/* signal error */
+  }
+  return res;
+}
+
+static int64_t
+Sseek64_asset(void *handle, int64_t offset, int whence)
+{ off64_t res = AAsset_seek64((AAsset* )handle, (off64_t)offset, whence);
+  if (res == (off64_t)-1) {
+      errno = ENOSPC;			/* signal error */
+  }
+  return res;
+}
+
+static int
+Scontrol_asset(void *handle, int action, void *arg)
+{ AAsset*  h = (AAsset* ) handle;
+  off_t *rval = (off_t *)arg;
+
+  switch(action)
+    {
+    case SIO_GETSIZE:
+      *rval = AAsset_getLength(h);
+      return 0;
+    case SIO_GETFILENO:
+        { off_t start = 0, end = AAsset_getLength(h);
+	  int fd = AAsset_openFileDescriptor((AAsset*)handle, &start, &end);
+	  if (fd == 0)
+	     return -1;
+	  *rval = fd;
+	  return 0;
+        }
+	  case SIO_SETENCODING:
+    case SIO_FLUSHOUTPUT:
+      return 0;
+    default:
+      return -1;
+  }
+}
+
+
+static int
+Sclose_asset(void *handle)
+{
+  AAsset_close((AAsset* )handle);
+
+  return 0;
+}
+
+
+
+IOFUNCTIONS Sassetfunctions =
+{ Sread_asset,
+  Swrite_asset,
+  Sseek_asset,
+  Sclose_asset,
+  Scontrol_asset,
+  Sseek64_asset
+};
+
+#include <jni.h>
+#include <string.h>
+
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Sopen_asset(char **buffer, size_t *sizep, const char* mode)
+    Open an Android asset, essentially a read-only 	part of a ZIP archive.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+IOSTREAM *
+Sopen_asset(char *bufp, const char *how, AAssetManager* mgr)
+{
+  AAsset* asset;
+  int flags = SIO_FILE|SIO_TEXT|SIO_RECORDPOS|SIO_FBUF;
+  int op = *how++;
+  IOSTREAM *s;
+  IOENC enc = ENC_UNKNOWN;
+
+  for( ; *how; how++)
+  { switch(*how)
+    { case 'b':				/* binary */
+	flags &= ~SIO_TEXT;
+	enc = ENC_OCTET;
+        break;
+       case 'r':				/* no record */
+	flags &= ~SIO_RECORDPOS;
+        break;
+      case 'L':				/* lock r: read, w: write */
+      case 'l':				/* lock r: read, w: write */
+	// read-only, nothing changes.
+	break;
+      default:
+	errno = EINVAL;
+        return NULL;
+    }
+  }
+
+#if O_LARGEFILES && defined(O_LARGEFILE)
+  oflags |= O_LARGEFILE;
+#endif
+
+  switch(op)
+  { case 'w':
+      return NULL;
+    case 'a':
+      return NULL;
+    case 'u':
+      return NULL;
+    case 'r':
+      //const char *utf8 = (*env)->GetStringUTFChars(env, bufp, NULL);
+       asset = AAssetManager_open(mgr, bufp, AASSET_MODE_UNKNOWN);
+      flags |= SIO_INPUT;
+      break;
+    default:
+      errno = EINVAL;
+      return NULL;
+  }
+
+  if ( !asset )
+    return NULL;
+
+
+  s = Snew((void *)asset, flags, &Sassetfunctions);
+  if ( enc != ENC_UNKNOWN )
+    s->encoding = enc;
+
+  return s;
+}
+
+#endif /* __ANDROID__ */
 
 		 /*******************************
 		 *	  MEMORY STREAMS	*
@@ -3541,8 +3759,15 @@ SinitStreams(void)
 
       if ( !isatty(i) && s->functions == &Sttyfunctions )
       { s->flags &= ~SIO_ISATTY;
-	s->functions = &Sfilefunctions; /* Check for pipe? */
+	    s->functions = &Sfilefunctions; /* Check for pipe? */
+#if HAVE_SETLINEBUF
+	    /* make sure wwe buffer on new line for ttys, eg eclipse console */
+      } else if (i == 1) {
+    	  setlinebuf( stdout );
+#endif
       }
+      if ( s > 0)
+	s->newline = SIO_NL_DOS;
       if ( s->encoding == ENC_ISO_LATIN_1 )
 	s->encoding = enc;
 #ifdef O_PLMT

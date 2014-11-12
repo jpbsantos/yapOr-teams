@@ -1,19 +1,19 @@
 /*************************************************************************
-*									 *
-*	 YAP Prolog 							 *
-*									 *
-*	Yap Prolog was developed at NCCUP - Universidade do Porto	 *
-*									 *
-* Copyright L.Damas, V. Santos Costa and Universidade do Porto 1985--	 *
-*									 *
-**************************************************************************
-*									 *
-* File:		signal.c						 *
-* comments:	Signal Handling & Debugger Support			 *
-*									 *
-*									 *
-*									 *
-*************************************************************************/
+ *									 *
+ *	 YAP Prolog 							 *
+ *									 *
+ *	Yap Prolog was developed at NCCUP - Universidade do Porto	 *
+ *									 *
+ * Copyright L.Damas, V. Santos Costa and Universidade do Porto 1985--	 *
+ *									 *
+ **************************************************************************
+ *									 *
+ * File:		signal.c						 *
+ * comments:	Signal Handling & Debugger Support			 *
+ *									 *
+ *									 *
+ *									 *
+ *************************************************************************/
 #ifdef SCCS
 static char     SccsId[] = "%W% %G%";
 #endif
@@ -21,6 +21,10 @@ static char     SccsId[] = "%W% %G%";
 #define HAS_CACHE_REGS 1
 
 #include "Yap.h"
+#if _WIN32
+#include <stdio.h>
+#include <io.h>
+#endif
 #include "Yatom.h"
 #include "YapHeap.h"
 #include "eval.h"
@@ -36,29 +40,167 @@ static char     SccsId[] = "%W% %G%";
 #include <malloc.h>
 #endif
 #include <wchar.h>
+#ifdef LOW_LEVEL_TRACER
+#include <tracer.h>
+#endif
 
-inline static void
-do_signal(yap_signals sig USES_REGS)
-{
-  LOCK(LOCAL_SignalLock);
-  if (!LOCAL_InterruptsDisabled) {
-    CreepFlag = Unsigned(LCL0);
-    if (sig != YAP_CREEP_SIGNAL)
-      EventFlag = Unsigned(LCL0);
+
+/*
+ * The InteractSIGINT function is called after a normal interrupt had been caught.
+ * It allows 6 possibilities: abort, continue, trace, debug, help, exit.
+ */
+static yap_signals
+InteractSIGINT(int ch) {
+#ifdef HAVE_SETBUF
+  /* make sure we are not waiting for the end of line */
+  YP_setbuf (stdin, NULL);
+#endif
+  switch (ch) {
+    case 'a':
+      /* abort computation */
+      return YAP_ABORT_SIGNAL;
+    case 'b':
+      /* continue */
+      return YAP_BREAK_SIGNAL;
+    case 'c':
+      /* continue */
+      return YAP_NO_SIGNAL;
+    case 'd':
+      /* enter debug mode */
+      return YAP_DEBUG_SIGNAL;
+    case 'e':
+      /* exit */
+      Yap_exit(1);
+      return YAP_EXIT_SIGNAL;
+    case 'g':
+      /* stack dump */
+      return YAP_STACK_DUMP_SIGNAL;
+    case 't':
+      /* start tracing */
+      return YAP_TRACE_SIGNAL;
+#ifdef LOW_LEVEL_TRACER
+    case 'T':
+      toggle_low_level_trace();
+      return YAP_NO_SIGNAL;
+#endif
+    case 's':
+      /* show some statistics */
+      return YAP_STATISTICS_SIGNAL;
+    case EOF:
+      return YAP_NO_SIGNAL;
+    case 'h':
+    case '?':
+    default:
+      /* show an helpful message */
+      fprintf(stderr, "Please press one of:\n");
+      fprintf(stderr, "  a for abort\n  c for continue\n  d for debug\n");
+      fprintf(stderr, "  e for exit\n  g for stack dump\n  s for statistics\n  t for trace\n");
+      fprintf(stderr, "  b for break\n");
+      return YAP_NO_SIGNAL;
   }
-  LOCAL_ActiveSignals |= sig;
-  UNLOCK(LOCAL_SignalLock);
+}
+
+/*
+  This function talks to the user about a signal. We assume we are in
+  the context of the main Prolog thread (trivial in Unix, but hard in WIN32)
+ */
+static yap_signals
+ProcessSIGINT(void)
+{
+  CACHE_REGS
+  int ch, out;
+#if _WIN32
+  if (!_isatty(0)) {
+      return YAP_INT_SIGNAL;
+  }
+#elif HAVE_ISATTY
+  if (!isatty(0)) {
+      return YAP_INT_SIGNAL;
+  }
+#endif
+  LOCAL_PrologMode |= AsyncIntMode;
+  do {
+      ch = Yap_GetCharForSIGINT();
+  } while (!(out = InteractSIGINT(ch)));
+  LOCAL_PrologMode &= ~AsyncIntMode;
+  return(out);
 }
 
 inline static void
-undo_signal(yap_signals sig USES_REGS)
+do_signal(int wid, yap_signals sig USES_REGS)
 {
-  LOCK(LOCAL_SignalLock);
-  if ((LOCAL_ActiveSignals & ~(YAP_CREEP_SIGNAL)) == sig) {
-    CalculateStackGap( PASS_REGS1 );
+#if THREADS
+  __sync_fetch_and_or ( &REMOTE(wid)->Signals_, SIGNAL_TO_BIT(sig));
+  if (!REMOTE_InterruptsDisabled(wid)) {
+      REMOTE_ThreadHandle(wid).current_yaam_regs->CreepFlag_ =
+	  Unsigned(REMOTE_ThreadHandle(wid).current_yaam_regs->LCL0_);
   }
-  LOCAL_ActiveSignals &= ~sig;
-  UNLOCK(LOCAL_SignalLock);
+#else
+  LOCAL_Signals |= SIGNAL_TO_BIT(sig);
+  if (!LOCAL_InterruptsDisabled) {
+      CreepFlag =
+	  Unsigned(LCL0);
+  }
+#endif
+}
+
+
+
+inline static int
+get_signal(yap_signals sig USES_REGS)
+{
+#if THREADS
+  uint64_t old;
+
+  // first, clear the Creep Flag, now if someone sets it it is their problem
+  CalculateStackGap( PASS_REGS1 );
+  // reset the flag
+  if ( (old =__sync_fetch_and_and( &LOCAL_Signals, ~SIGNAL_TO_BIT(sig) ) ) !=
+      SIGNAL_TO_BIT(sig)) {
+      if (!LOCAL_InterruptsDisabled && LOCAL_Signals != 0) {
+	  CreepFlag =  (CELL)LCL0;
+      }
+       if (!(old & SIGNAL_TO_BIT(sig)) ) {
+	  // not there?
+          return FALSE;
+      }
+     // more likely case, we have other interrupts.
+      return TRUE;
+  }
+  // success, we are good
+  return TRUE;
+  // should we set the flag?
+#else
+  if (LOCAL_Signals & SIGNAL_TO_BIT(sig)) {
+      LOCAL_Signals &= ~SIGNAL_TO_BIT(sig);
+      if (!LOCAL_InterruptsDisabled && LOCAL_Signals != 0) {
+	  CreepFlag =  (CELL)LCL0;
+      } else {
+	  CalculateStackGap( PASS_REGS1 );
+      }
+      return TRUE;
+  } else {
+      return FALSE;
+  }
+#endif
+}
+
+/**
+  Function called to handle delayed interrupts. 
+ */
+int
+Yap_HandleInterrupts( void )
+{
+  CACHE_REGS
+  yap_signals sig;
+
+  if ( get_signal( YAP_INT_SIGNAL PASS_REGS )) {
+      if ( (sig = ProcessSIGINT()) != YAP_NO_SIGNAL )
+	do_signal(worker_id, sig PASS_REGS);
+      LOCAL_PrologMode &= ~InterruptMode;
+      return 1;
+  }
+  return 0;
 }
 
 static Int 
@@ -70,7 +212,7 @@ p_creep( USES_REGS1 )
   at = AtomCreep;
   pred = RepPredProp(PredPropByFunc(Yap_MkFunctor(at, 1),0));
   CreepCode = pred;
-  do_signal(YAP_CREEP_SIGNAL PASS_REGS);
+  do_signal(worker_id, YAP_CREEP_SIGNAL PASS_REGS);
   return TRUE;
 }
 
@@ -83,19 +225,14 @@ p_creep_fail( USES_REGS1 )
   at = AtomCreep;
   pred = RepPredProp(PredPropByFunc(Yap_MkFunctor(at, 1),0));
   CreepCode = pred;
-  do_signal(YAP_CREEP_SIGNAL PASS_REGS);
+  do_signal(worker_id, YAP_CREEP_SIGNAL PASS_REGS);
   return FALSE;
 }
 
 static Int 
 p_stop_creeping( USES_REGS1 )
 {
-  LOCK(LOCAL_SignalLock);
-  LOCAL_ActiveSignals &= ~(YAP_CREEP_SIGNAL);
-  if (!LOCAL_ActiveSignals) {
-    CalculateStackGap( PASS_REGS1 );
-  }
-  UNLOCK(LOCAL_SignalLock);
+  get_signal( YAP_CREEP_SIGNAL PASS_REGS );
   return TRUE;
 }
 
@@ -103,16 +240,8 @@ static Int
 p_creep_allowed( USES_REGS1 )
 {
   if (PP != NULL) {
-    LOCK(LOCAL_SignalLock);
-    if (LOCAL_ActiveSignals & YAP_CREEP_SIGNAL  && !LOCAL_InterruptsDisabled) {
-      LOCAL_ActiveSignals &= ~YAP_CREEP_SIGNAL;    
-      if (!LOCAL_ActiveSignals)
-	CalculateStackGap( PASS_REGS1 );
-      UNLOCK(LOCAL_SignalLock);
-    } else {
-      UNLOCK(LOCAL_SignalLock);
-    }
-    return TRUE;
+      get_signal(YAP_CREEP_SIGNAL PASS_REGS);
+      return TRUE;
   }
   return FALSE;
 }
@@ -121,183 +250,191 @@ void
 Yap_signal(yap_signals sig)
 {
   CACHE_REGS
-  do_signal(sig PASS_REGS);
+  do_signal(worker_id, sig PASS_REGS);
 }
 
+static Int
+p_debug( USES_REGS1 );
+
 void 
-Yap_undo_signal(yap_signals sig)
+Yap_external_signal(int wid, yap_signals sig)
 {
-  CACHE_REGS
-  undo_signal(sig PASS_REGS);
+#if THREADS
+  REGSTORE *regcache = REMOTE_ThreadHandle(wid).current_yaam_regs;
+#endif
+  do_signal(wid, sig PASS_REGS);
+  LOCAL_PrologMode &= ~InterruptMode;
+}
+
+int
+Yap_get_signal__(yap_signals sig USES_REGS)
+{
+  return get_signal(sig PASS_REGS);
+}
+
+// the caller holds the lock.
+int 
+Yap_has_signals__(yap_signals sig1, yap_signals sig2 USES_REGS)
+{
+  return LOCAL_Signals & (SIGNAL_TO_BIT(sig1)|SIGNAL_TO_BIT(sig2));
+}
+
+
+int 
+Yap_only_has_signals__(yap_signals sig1, yap_signals sig2 USES_REGS)
+{
+  uint64_t  sigs = LOCAL_Signals;
+  return sigs & (SIGNAL_TO_BIT(sig1) | SIGNAL_TO_BIT(sig2)) &&
+      ! (sigs & ~(SIGNAL_TO_BIT(sig1) | SIGNAL_TO_BIT(sig2))) ;
 }
 
 #ifdef DEBUG
+
+volatile int volat = 0;
+
 static Int 
 p_debug( USES_REGS1 )
 {				/* $debug(+Flag) */
   int             i = IntOfTerm(Deref(ARG1));
-
+  while (volat == 0) {
+  }
   if (i >= 'a' && i <= 'z')
     GLOBAL_Option[i - 96] = !GLOBAL_Option[i - 96];
   return (1);
+}
+void Yap_loop(void);
+void Yap_debug_end_loop(void);
+
+void Yap_loop(void)
+{
+  while (volat == 0);
+}
+
+void Yap_debug_end_loop(void)
+{
+  volat = 1;
 }
 #endif
 
 static Int
 p_first_signal( USES_REGS1 )
 {
-  LOCK(LOCAL_SignalLock);
-  MUTEX_LOCK(&(LOCAL_ThreadHandle.tlock));
-  /* always do wakeups first, because you don't want to keep the
-     non-backtrackable variable bad */
-  if (LOCAL_ActiveSignals & YAP_WAKEUP_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_WAKEUP_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigWakeUp));
+  Atom at;
+  yap_signals sig;
+
+  while (TRUE) {
+      uint64_t mask = LOCAL_Signals;
+      if (mask == 0)
+	return FALSE;
+#if HAVE___BUILTIN_FFSLL
+x      sig = __builtin_ffsll(mask);
+#elif HAVE_FFSLL
+      sig = ffsll(mask);
+#else
+      sig = Yap_msb( mask );
+#endif
+     if (get_signal(sig PASS_REGS)) {
+	  break;
+      }
+																											  }
+  loop:
+  switch (sig) {
+    case YAP_INT_SIGNAL:
+      sig = ProcessSIGINT();
+      if (sig == YAP_INT_SIGNAL) {
+	  at = AtomSigInt;
+	  break;
+      }
+      if (sig != YAP_NO_SIGNAL)
+	goto loop;
+      return FALSE;
+    case YAP_ABORT_SIGNAL:
+      /* abort computation */
+      LOCAL_PrologMode &= ~AsyncIntMode;
+      if (LOCAL_PrologMode & (GCMode|ConsoleGetcMode|CritMode)) {
+	  LOCAL_PrologMode |= AbortMode;
+	  return -1;
+      } else {
+	  Yap_Error(PURE_ABORT, TermNil, "abort from console");
+      }
+      Yap_RestartYap( 1 );
+      return FALSE;
+    case YAP_CREEP_SIGNAL:
+      at = AtomSigCreep;
+      break;
+    case YAP_TRACE_SIGNAL:
+      at = AtomSigTrace;
+      break;
+    case YAP_DEBUG_SIGNAL:
+      at = AtomSigDebug;
+      break;
+    case YAP_BREAK_SIGNAL:
+      at = AtomSigBreak;
+      break;
+    case YAP_FAIL_SIGNAL:
+      at = AtomFail;
+      break;
+    case YAP_STACK_DUMP_SIGNAL:
+      at = AtomSigStackDump;
+      break;
+    case YAP_STATISTICS_SIGNAL:
+      at = AtomSigStatistics;
+      break;
+#ifdef SIGALRM
+    case YAP_ALARM_SIGNAL:
+#endif
+    case YAP_WINTIMER_SIGNAL:
+      at = AtomSigAlarm;
+      break;
+#ifdef SIGVTALRM
+    case YAP_VTALARM_SIGNAL:
+      at = AtomSigVTAlarm;
+      break;
+#endif
+    case YAP_EXIT_SIGNAL:
+      Yap_exit(1);
+      return FALSE;
+    case YAP_WAKEUP_SIGNAL:
+      at = AtomSigWakeUp;
+      break;
+    case YAP_ITI_SIGNAL:
+      at = AtomSigIti;
+      break;
+#ifdef SIGPIPE
+    case YAP_PIPE_SIGNAL:
+      at = AtomSigPipe;
+      break;
+#endif
+#ifdef SIGHUP
+    case YAP_HUP_SIGNAL:
+      at = AtomSigHup;
+      break;
+#endif
+#ifdef SIGUSR1
+    case YAP_USR1_SIGNAL:
+      at = AtomSigUsr1;
+      break;
+#endif
+#ifdef SIGUSR2
+    case YAP_USR2_SIGNAL:
+      at = AtomSigUsr2;
+      break;
+#endif
+#ifdef SIGFPE
+    case YAP_FPE_SIGNAL:
+      at = AtomSigFPE;
+      break;
+#endif
+    default:
+      return FALSE;
   }
-  if (LOCAL_ActiveSignals & YAP_ITI_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_ITI_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigIti));
-  }
-  if (LOCAL_ActiveSignals & YAP_INT_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_INT_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigInt));
-  }
-  if (LOCAL_ActiveSignals & YAP_USR2_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_USR2_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigUsr2));
-  }
-  if (LOCAL_ActiveSignals & YAP_USR1_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_USR1_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigUsr1));
-  }
-  if (LOCAL_ActiveSignals & YAP_PIPE_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_PIPE_SIGNAL;
-#ifdef THREADS
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-#endif  
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigPipe));
-  }
-  if (LOCAL_ActiveSignals & YAP_HUP_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_HUP_SIGNAL;
-#ifdef THREADS
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-#endif  
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigHup));
-  }
-  if (LOCAL_ActiveSignals & YAP_ALARM_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_ALARM_SIGNAL;
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigAlarm));
-  }
-  if (LOCAL_ActiveSignals & YAP_VTALARM_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_VTALARM_SIGNAL;
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigVTAlarm));
-  }
-  if (LOCAL_ActiveSignals & YAP_CREEP_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_CREEP_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigCreep));
-  }
-  if (LOCAL_ActiveSignals & YAP_TRACE_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_TRACE_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigTrace));
-  }
-  if (LOCAL_ActiveSignals & YAP_DEBUG_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_DEBUG_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigDebug));
-  }
-  if (LOCAL_ActiveSignals & YAP_BREAK_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_BREAK_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigBreak));
-  }
-  if (LOCAL_ActiveSignals & YAP_STACK_DUMP_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_STACK_DUMP_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigStackDump));
-  }
-  if (LOCAL_ActiveSignals & YAP_STATISTICS_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_STATISTICS_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomSigStatistics));
-  }
-  if (LOCAL_ActiveSignals & YAP_FAIL_SIGNAL) {
-    LOCAL_ActiveSignals &= ~YAP_FAIL_SIGNAL;
-    MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-    UNLOCK(LOCAL_SignalLock);
-    return Yap_unify(ARG1, MkAtomTerm(AtomFail));
-  }
-  MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-  UNLOCK(LOCAL_SignalLock);
-  return FALSE;
+  return Yap_unify(ARG1, MkAtomTerm(at));
 }
 
 static Int
 p_continue_signals( USES_REGS1 )
 {
-  /* hack to force the signal anew */
-  if (LOCAL_ActiveSignals & YAP_ITI_SIGNAL) {
-    Yap_signal(YAP_ITI_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_INT_SIGNAL) {
-    Yap_signal(YAP_INT_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_USR2_SIGNAL) {
-    Yap_signal(YAP_USR2_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_USR1_SIGNAL) {
-    Yap_signal(YAP_USR1_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_HUP_SIGNAL) {
-    Yap_signal(YAP_HUP_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_ALARM_SIGNAL) {
-    Yap_signal(YAP_ALARM_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_VTALARM_SIGNAL) {
-    Yap_signal(YAP_VTALARM_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_CREEP_SIGNAL) {
-    Yap_signal(YAP_CREEP_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_DEBUG_SIGNAL) {
-    Yap_signal(YAP_DEBUG_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_BREAK_SIGNAL) {
-    Yap_signal(YAP_BREAK_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_STACK_DUMP_SIGNAL) {
-    Yap_signal(YAP_STACK_DUMP_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_STATISTICS_SIGNAL) {
-    Yap_signal(YAP_STATISTICS_SIGNAL);
-  }
-  if (LOCAL_ActiveSignals & YAP_FAIL_SIGNAL) {
-    Yap_signal(YAP_FAIL_SIGNAL);
-  }
-  MUTEX_UNLOCK(&(LOCAL_ThreadHandle.tlock));
-  return TRUE;
+  return p_first_signal( PASS_REGS1 );
 }
 
 void
@@ -311,6 +448,12 @@ Yap_InitSignalCPreds(void)
   Yap_InitCPred ("$continue_signals", 0, p_continue_signals, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$creep_allowed", 0, p_creep_allowed, 0);
 #ifdef DEBUG
-  Yap_InitCPred("$debug", 1, p_debug, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred("sys_debug", 1, p_debug, SafePredFlag|SyncPredFlag);
 #endif
+}
+
+void *Yap_InitSignals(int wid)
+{
+  void *ptr = (void *)malloc(sizeof(UInt)*REMOTE_MaxActiveSignals(wid));
+  return ptr;
 }

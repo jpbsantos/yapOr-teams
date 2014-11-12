@@ -110,6 +110,25 @@ static void	initEnviron(void);
 #define DEFAULT_PATH "/bin:/usr/bin"
 #endif
 
+/** shell(+Command:text, -Status:integer) is det.
+
+Run an external command and wait for its completion.
+*/
+
+static
+PRED_IMPL("shell", 2, shell, 0)
+{ GET_LD
+  char *cmd;
+
+  if ( PL_get_chars(A1, &cmd, CVT_ALL|REP_FN|CVT_EXCEPTION) )
+  { int rval = System(cmd);
+
+    return PL_unify_integer(A2, rval);
+  }
+
+  fail;
+}
+
 		/********************************
 		*         INITIALISATION        *
 		*********************************/
@@ -474,12 +493,10 @@ setRandom(unsigned int *seedp)
 #endif
   }
 
-#ifdef HAVE_SRANDOM
+#if HAVE_SRANDOM
   srandom(seed);
-#else
-#ifdef HAVE_SRAND
+#elif HAVE_SRAND
   srand(seed);
-#endif
 #endif
 }
 
@@ -1232,6 +1249,7 @@ expandVars(const char *pattern, char *expanded, int maxlen)
 
     pattern++;
     user = takeWord(&pattern, wordbuf, sizeof(wordbuf));
+    
     LOCK();
 
     if ( user[0] == EOS )		/* ~/bla */
@@ -1306,9 +1324,22 @@ expandVars(const char *pattern, char *expanded, int maxlen)
 	break;
       case '$':
 	{ char envbuf[MAXPATHLEN];
-	  char *var = takeWord(&pattern, wordbuf, sizeof(wordbuf));
-	  char *value;
-	  int l;
+	  char *var;
+	  char *value, ch;
+	  int l, i;
+
+	  if (pattern[0] == '{') {
+	    pattern++;
+	    for (i = 0; i < sizeof(envbuf)-1; i++) {
+	      if ((ch = *pattern++) == '}')
+		break;
+	      envbuf[i] = ch;
+	    }
+	    envbuf[i] = '\0';
+	    var = envbuf;
+	  } else {
+	    var = takeWord(&pattern, wordbuf, sizeof(wordbuf));
+	  }
 
 	  if ( var[0] == EOS )
 	    goto def;
@@ -1494,7 +1525,6 @@ PL_changed_cwd(void)
   UNLOCK();
 }
 
-
 static char *
 cwd_unlocked(char *cwd, size_t cwdlen)
 { GET_LD
@@ -1513,6 +1543,11 @@ to be implemented directly.  What about other Unixes?
 #undef HAVE_GETCWD
 #endif
 
+#if __ANDROID__
+    if (LOCAL_InAssetDir) {
+	rval = strncpy(buf, LOCAL_InAssetDir, sizeof(buf));
+    } else
+#endif
 #if defined(HAVE_GETWD) && !defined(HAVE_GETCWD)
     rval = getwd(buf);
 #else
@@ -1616,10 +1651,42 @@ ChDir(const char *path)
     succeed;
 
   AbsoluteFile(path, tmp);
+#if __ANDROID__
+  /* treat "/assets" as a directory (actually as a mounted file system).
+   *
+   */
+  if (LOCAL_InAssetDir) {
+      free(LOCAL_InAssetDir);
+      LOCAL_InAssetDir = NULL;
+  }
+  if (strstr(ospath, "/assets/") == ospath)  {
+      const char *dirName = ospath+strlen("/assets/");
+      AAssetManager* mgr = GLOBAL_assetManager;
+      AAssetDir* dir;
+
+      if (( dir = AAssetManager_openDir(mgr, dirName) ) &&
+	  AAssetDir_getNextFileName( dir ) ) {
+	  // valid directpry
+	  size_t sz = strlen(ospath)+1;
+	  AAssetDir_close(dir);
+	  LOCAL_InAssetDir = (char *)malloc(sz);
+	  strncpy(LOCAL_InAssetDir, ospath, sz-1);
+	  succeed;
+      }  else {
+	  fail;
+      }
+  } else if ( !strcmp(ospath,"/assets") ||
+      !strcmp(ospath,"/assets/") ) {
+	  // valid directpry
+	  size_t sz = strlen("/assets")+1;
+	  LOCAL_InAssetDir = (char *)malloc(sz);
+	  strncpy(LOCAL_InAssetDir, ospath, sz);
+	  succeed;
+  }
+ #endif
 
   if ( chdir(ospath) == 0 )
   { size_t len;
-
     len = strlen(tmp);
     if ( len == 0 || tmp[len-1] != '/' )
     { tmp[len++] = '/';
@@ -1646,7 +1713,7 @@ ChDir(const char *path)
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     struct tm *PL_localtime_r(time_t time, struct tm *r)
 
-    Convert time in Unix internal form (seconds since Jan 1 1970) into a
+    Convert tunlime in Unix internal form (seconds since Jan 1 1970) into a
     structure providing easier access to the time.
 
     For non-Unix systems: struct time is supposed  to  look  like  this.
@@ -1780,7 +1847,7 @@ Sread_terminal(void *handle, char *buf, size_t size)
   int fd = (int)h;
   source_location oldsrc = LD->read_source;
 
-  if ( Soutput && true(Soutput, SIO_ISATTY) )
+  if ( Soutput && True(Soutput, SIO_ISATTY) )
   { if ( LD->prompt.next && ttymode != TTY_RAW )
       PL_write_prompt(TRUE);
     else
@@ -2752,3 +2819,6 @@ Pause(double t)
 }
 #endif
 
+BeginPredDefs(system)
+  PRED_DEF("shell", 2, shell, 0)
+EndPredDefs

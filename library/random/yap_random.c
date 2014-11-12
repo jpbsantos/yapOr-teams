@@ -22,7 +22,7 @@
 #include <windows.h>
 #endif
 
-void PROTO(init_random, (void));
+void init_random( void );
 
 static short a1 = 27314, b1 = 9213, c1 = 17773;
 
@@ -69,7 +69,7 @@ init_random(void)
 
 #ifdef _WIN32
 
-int WINAPI PROTO(win_random, (HANDLE, DWORD, LPVOID));
+int WINAPI win_random(HANDLE, DWORD, LPVOID);
 
 int WINAPI win_random(HANDLE hinst, DWORD reason, LPVOID reserved)
 {

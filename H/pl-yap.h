@@ -36,6 +36,7 @@ extern IOENC Yap_DefaultEncoding(void);
 extern void Yap_SetDefaultEncoding(IOENC);
 extern void Yap_setCurrentSourceLocation( void *rd );
 extern void   *Yap_GetStreamHandle(Atom at);
+extern void	Yap_WriteAtom(IOSTREAM *s, Atom atom);
 
 extern atom_t codeToAtom(int chrcode);
 
@@ -249,5 +250,7 @@ atom_t ATOM_;
 #if THREADS
 intptr_t system_thread_id(PL_thread_info_t *info);
 #endif
+
+extern Term Yap_StringToTerm(const char *s, size_t len, term_t bindings);
 
 #endif /* PL_YAP_H */

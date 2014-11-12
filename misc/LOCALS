@@ -57,7 +57,8 @@ struct pred_entry*		LastAssertedPred			=NULL
 char*				ScannerStack				=NULL
 struct scanner_extra_alloc*	 ScannerExtraBlocks			=NULL
 struct DB_TERM*			BallTerm				=NULL 		RestoreBallTerm(wid)
-UInt				ActiveSignals				=0L
+UInt				MaxActiveSignals			=64L
+uint64_t			Signals				=0L
 UInt				IPredArity				=0L
 yamop*				ProfEnd					=NULL
 int				UncaughtThrow				=FALSE
@@ -148,10 +149,6 @@ Int				total_choicepoints			=0
 
 int				consult_level				=0
 
-#if defined(YAPOR) || defined(THREADS)
-lockvar				SignalLock				MkLock
-#endif
-
 // Variables related to memory allocation
 ADDR				LocalBase				void
 ADDR				GlobalBase				void
@@ -198,6 +195,8 @@ struct db_globs*		s_dbg					void
 
 //eval.c
 yap_error_number 		matherror 				=YAP_NO_ERROR
+Term		 		mathtt		 			void
+char*		 		mathstring				=NULL
 yap_error_number 		CurrentError 				=YAP_NO_ERROR
 
 //grow.c
@@ -254,6 +253,13 @@ yamop			       *ImportFAILCODE				=NULL
 
 Functor				FunctorVar				=FunctorVar
 
+#if __ANDROID__
+// current virtual directory.
+struct AAssetManager* assetManager				=GLOBAL_assetManager
+char*				InAssetDir						=NULL
+#endif
+
+
 // exo indexing
 
 UInt				ibnds[256]				void
@@ -266,7 +272,7 @@ UInt				exo_arg					=0
 struct scan_atoms*		search_atoms				void
 
 // Slots
-Int				CurSlot					=0
+yhandle_t				CurSlot					=0
 
 
 Term				SourceModule				=0

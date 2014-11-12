@@ -16,11 +16,51 @@
 *									 *
 *************************************************************************/
 
+/** @defgroup Messages Message Handling
+@ingroup YAPControl
+@{
+
+The interaction between YAP and the user relies on YAP's ability to
+portray messages. These messages range from prompts to error
+information. All message processing is performed through the builtin
+print_message/2, in two steps:
+
++ The message is processed into a list of commands 
++ The commands in the list are sent to the `format/3` builtin
+in sequence.
+
+
+The first argument to print_message/2 specifies the importance of
+the message. The options are:
+
++ `error`
+error handling
++ `warning`
+compilation and run-time warnings,
++ `informational`
+generic informational messages
++ `help`
+help messages (not currently implemented in YAP)
++ `query`
+query 	used in query processing (not currently implemented in YAP)
++ `silent`
+messages that do not produce output but that can be intercepted by hooks.
+
+
+The next table shows the main predicates and hooks associated to message
+handling in YAP:
+
+
+*/
+
 :- module('$messages',
 	  [system_message/4,
 	   prefix/6,
 	   prefix/5,
 	   file_location/3]).
+
+
+:- use_system_module( user, [generate_message_hook/3]).
 
 :- multifile prolog:message/3.
 
@@ -35,7 +75,6 @@ file_position(user_input,LN) -->
 	[ 'at line ~d in user_input,' - [LN] ].
 file_position(FileName,LN) -->
 	[ 'at line ~d in ~a,' - [LN,FileName] ].
-
 
 translate_message(Term) -->
 	generate_message(Term), !.
@@ -57,9 +96,9 @@ generate_message('$abort') --> !,
 	['YAP execution aborted'].
 generate_message(abort(user)) --> !,
 	['YAP execution aborted'].
-generate_message(loading(_,user)) --> !.
-generate_message(loading(What,AbsoluteFileName)) --> !,
-	[ '~a ~a...' - [What, AbsoluteFileName] ].
+generate_message(loading(_,F)) --> F == user, !.
+generate_message(loading(What,FileName)) --> !,
+	[ '~a ~w...' - [What, FileName] ].
 generate_message(loaded(_,user,_,_,_)) --> !.
 generate_message(loaded(included,AbsoluteFileName,Mod,Time,Space)) --> !,
 	[ '~a included in module ~a, ~d msec ~d bytes' - [AbsoluteFileName,Mod,Time,Space] ].
@@ -98,7 +137,7 @@ generate_message(M) -->
 
 stack_dump(error(_,_)) -->
 	{ fail }, 
-	{ recorded(sp_info,local_sp(P,CP,Envs,CPs),_) },
+	{ recorded(sp_info,local_sp(_P,CP,Envs,CPs),_) },
 	{ Envs = [_|_] ; CPs = [_|_] }, !,
 	[nl],
 	'$hacks':display_stack_info(CPs, Envs, 20, CP).
@@ -154,11 +193,23 @@ system_message(no_match(P)) -->
 	[ 'No matching predicate for ~w.' - [P] ].
 system_message(leash([A|B])) -->
 	[ 'Leashing set to ~w.' - [[A|B]] ].
-system_message(singletons([SV=_],P)) -->
-	[ 'Singleton variable ~s in ~q.' - [SV,P] ].
-system_message(singletons(SVs,P)) -->
-	[  'Singleton variables ~s in ~q.' - [SVsL, P] ],
-	{ svs(SVs,SVsL,[]) }.
+system_message(singletons(SVs,P,W)) -->
+	[  'Singleton variable~*c ~s in ~q, starting at line ~d' - [NVs, 0's, SVsL, I, L] ], % '
+	{ svs(SVs,SVsL,[]),
+	  ( SVs = [_] -> NVs = 0 ; NVs = 1 ),
+	  clause_to_indicator(P, I),
+	  stream_position_data( line_count, W, L)
+	}.
+system_message(multiple(P,W,F)) -->
+	[  'Redefinition: clause at line ~d redefines ~w from file ~a' - [L, I, F] ], % '
+	{ clause_to_indicator(P, I),
+	  stream_position_data( line_count, W, L)
+	}.
+system_message(discontiguous(P,W)) -->
+	[  'Discontiguous clause for ~w at line ~d' - [I, L] ], % '
+	{ clause_to_indicator(P, I),
+	  stream_position_data( line_count, W, L)
+	}.
 system_message(trace_command(-1)) -->
 	[ 'EOF is not a valid debugger command.'  ].
 system_message(trace_command(C)) -->
@@ -171,7 +222,7 @@ system_message(myddas_version(Version)) -->
 	[ 'MYDDAS version ~a' - [Version] ].
 system_message(yes) -->
 	[  'yes'  ].
-system_message(error,error(Msg,Info)) -->
+system_message(error(Msg,Info)) -->
 	( { var(Msg) } ; { var(Info)} ), !,
 	['bad error ~w' - [error(Msg,Info)]].
 system_message(error(consistency_error(Who),Where)) -->
@@ -182,8 +233,7 @@ system_message(error(domain_error(DomainType,Opt), Where)) -->
 	[ 'DOMAIN ERROR- ~w: ' - Where],
 	domain_error(DomainType, Opt).
 system_message(error(format_argument_type(Type,Arg), Where)) -->
-	[ 'FORMAT ARGUMENT ERROR- ~~~a called with ~w in ~w: ' - [Type,Arg,Where]],
-	domain_error(DomainType, Opt).
+	[ 'FORMAT ARGUMENT ERROR- ~~~a called with ~w in ~w: ' - [Type,Arg,Where]].
 system_message(error(existence_error(directory,Key), Where)) -->
 	[ 'EXISTENCE ERROR- ~w: ~w not an existing directory' - [Where,Key] ].
 system_message(error(existence_error(key,Key), Where)) -->
@@ -218,14 +268,14 @@ system_message(error(evaluation_error(zero_divisor), Where)) -->
 system_message(error(instantiation_error, Where)) -->
 	[ 'INSTANTIATION ERROR- ~w: expected bound value' - [Where] ].
 system_message(error(not_implemented(Type, What), Where)) -->
-	[ '~w not implemented- ~w' - [Type, What] ].
+	[ '~w: ~w not implemented- ~w' - [Where, Type, What] ].
 system_message(error(operating_system_error, Where)) -->
 	[ 'OPERATING SYSTEM ERROR- ~w' - [Where] ].
 system_message(error(out_of_heap_error, Where)) -->
 	[ 'OUT OF DATABASE SPACE ERROR- ~w' - [Where] ].
 system_message(error(out_of_stack_error, Where)) -->
 	[ 'OUT OF STACK SPACE ERROR- ~w' - [Where] ].
-vsystem_message(error(out_of_trail_error, Where)) -->
+system_message(error(out_of_trail_error, Where)) -->
 	[ 'OUT OF TRAIL SPACE ERROR- ~w' - [Where] ].
 system_message(error(out_of_attvars_error, Where)) -->
 	[ 'OUT OF STACK SPACE ERROR- ~w' - [Where] ].
@@ -240,6 +290,8 @@ system_message(error(permission_error(alias,new,P), Where)) -->
 system_message(error(permission_error(create,Name,P), Where)) -->
 	{ object_name(Name, ObjName) },
 	[ 'PERMISSION ERROR- ~w: cannot create ~a ~w' - [Where,ObjName,P] ].
+system_message(error(permission_error(import,M1:I,redefined,SecondMod), Where)) -->
+	[ 'PERMISSION ERROR- loading ~w: modules ~w and ~w both define ~w' - [Where,M1,SecondMod,I] ].
 system_message(error(permission_error(input,binary_stream,Stream), Where)) -->
 	[ 'PERMISSION ERROR- ~w: cannot read from binary stream ~w' - [Where,Stream] ].
 system_message(error(permission_error(input,closed_stream,Stream), Where)) -->
@@ -332,7 +384,7 @@ system_message(error(unknown, Where)) -->
 	[ 'EXISTENCE ERROR- procedure ~w undefined' - [Where] ].
 system_message(error(unhandled_exception,Throw)) -->
 	[ 'UNHANDLED EXCEPTION - message ~w unknown' - [Throw] ].
-system_message(error(uninstantiation_error(TE), Where)) -->
+system_message(error(uninstantiation_error(TE), _Where)) -->
 	[ 'UNINSTANTIATION ERROR - expected unbound term, got ~q' - [TE] ].
 system_message(Messg) -->
 	[ '~q' - Messg ].
@@ -378,10 +430,10 @@ domain_error(predicate_spec, Opt) --> !,
 	[ '~w invalid predicate specifier' - [Opt] ].
 domain_error(radix, Opt) --> !,
 	[ 'invalid radix ~w' - [Opt] ].
-vdomain_error(read_option, Opt) --> !,
+domain_error(read_option, Opt) --> !,
 	[ '~w invalid option to read_term' - [Opt] ].
-domain_error(semantics_indicatior, Opt) --> !,
-	[ '~w expected predicate indicator, got ~w' - [Opt] ].
+domain_error(semantics_indicator, Opt) --> !,
+	[ 'predicate indicator, got ~w' - [Opt] ].
 domain_error(shift_count_overflow, Opt) --> !,
 	[ 'shift count overflow in ~w' - [Opt] ].
 domain_error(source_sink, Opt) --> !,
@@ -498,8 +550,33 @@ syntax_error_token(A) --> !,
 %	Quintus/SICStus/SWI compatibility predicate to print message lines
 %       using  a prefix.
 
-prolog:print_message_lines(S, _, []) :- !.
-prolog:print_message_lines(S, P, [at_same_line|Lines]) :- !,
+/** @pred  print_message_lines(+ _Stream_, + _Prefix_, + _Lines_) 
+
+
+Print a message (see print_message/2) that has been translated to
+a list of message elements.  The elements of this list are:
+
++ _Format_-_Args_
+Where  _Format_ is an atom and  _Args_ is a list
+of format argument.  Handed to `format/3`.
++ `flush`
+If this appears as the last element,  _Stream_ is flushed
+(see `flush_output/1`) and no final newline is generated.
++ `at_same_line`
+If this appears as first element, no prefix is printed for
+the first line and the line-position is not forced to 0
+(see `format/1`, `~N`).
++ `<Format>`
+Handed to `format/3` as `format(Stream, Format, [])`.
++ nl
+A new line is started and if the message is not complete
+the  _Prefix_ is printed too.
+
+
+ 
+*/
+prolog:print_message_lines(_S, _, []) :- !.
+prolog:print_message_lines(_S, P, [at_same_line|Lines]) :- !,
 	print_message_line(S, Lines, Rest),
 	prolog:print_message_lines(S, P, Rest).
 prolog:print_message_lines(S, kind(Kind), Lines) :- !,
@@ -580,3 +657,24 @@ prefix(debug(_),      '% ',	   user_error).
 prefix(information,   '% ',	   user_error).
 
 
+clause_to_indicator(T, M:Name/Arity) :-
+	strip_module(T, M, T1),
+	pred_arity( T1, Name, Arity ).
+
+pred_arity(V,call,1) :- var(V), !.
+pred_arity((H:-_),Name,Arity) :- 
+    nonvar(H),
+    !,
+    functor(H,Name,Arity).
+pred_arity((H-->_),Name,Arity) :- !,
+    nonvar(H),
+    !,
+    functor(H,Name,A1),
+    Arity is A1+2.
+pred_arity(H,Name,Arity) :-
+    functor(H,Name,Arity).
+
+
+/**
+@}
+*/

@@ -293,7 +293,7 @@ struct pred_entry  *pred_mpistart;
   struct record_list  *yap_records;
 
   Atom  *swi_atoms;
-  Functor  swi_functors[N_SWI_FUNCTORS];
+  Functor  *swi_functors;
   struct swi_reverse_hash  swi_reverse_hash[N_SWI_HASH];
 
   Int  atom_translations;

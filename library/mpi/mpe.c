@@ -21,6 +21,20 @@ static char *rcsid = "$Header: /Users/vitor/Yap/yap-cvsbackup/library/mpi/mpe.c,
 
 #include "Yap.h"
 
+/* Should we use MPI ? */
+#if defined(HAVE_MPI_H) && (defined(HAVE_LIBMPI) || defined(HAVE_LIBMPICH))
+ #define HAVE_MPI 1
+#else
+ #define HAVE_MPI 0
+#endif
+
+/* Should we use MPE ? */
+#if defined(HAVE_MPI_H) && HAVE_LIBMPE &&  HAVE_MPI
+ #define HAVE_MPE 1
+#else
+ #define HAVE_MPE 0
+#endif
+
 #if HAVE_MPE
 
 #if 0
@@ -36,12 +50,12 @@ static char *rcsid = "$Header: /Users/vitor/Yap/yap-cvsbackup/library/mpi/mpe.c,
 #include "Yatom.h"
 #include <mpe.h>
 
-STATIC_PROTO (Int p_init, (void));
-STATIC_PROTO (Int p_start, (void));
-STATIC_PROTO (Int p_close, (void));
-STATIC_PROTO (Int p_create_event, (void));
-STATIC_PROTO (Int p_create_state, (void));
-STATIC_PROTO (Int p_log, (void));
+static Int p_init(void);
+static Int p_start(void);
+static Int p_close(void);
+static Int p_create_event(void);
+static Int p_create_state(void);
+static Int p_log(void);
 
 
 /*

@@ -55,7 +55,8 @@ static void InitWorker(int wid) {
   REMOTE_ScannerStack(wid) = NULL;
   REMOTE_ScannerExtraBlocks(wid) = NULL;
   REMOTE_BallTerm(wid) = NULL;
-  REMOTE_ActiveSignals(wid) = 0L;
+  REMOTE_MaxActiveSignals(wid) = 64L;
+  REMOTE_Signals(wid) = 0L;
   REMOTE_IPredArity(wid) = 0L;
   REMOTE_ProfEnd(wid) = NULL;
   REMOTE_UncaughtThrow(wid) = FALSE;
@@ -131,9 +132,6 @@ static void InitWorker(int wid) {
   REMOTE_total_choicepoints(wid) = 0;
 #endif
   REMOTE_consult_level(wid) = 0;
-#if defined(YAPOR) || defined(THREADS)
-  INIT_LOCK(REMOTE_SignalLock(wid));
-#endif
 
 
 
@@ -175,6 +173,8 @@ static void InitWorker(int wid) {
 
 
   REMOTE_matherror(wid) = YAP_NO_ERROR;
+
+  REMOTE_mathstring(wid) = NULL;
   REMOTE_CurrentError(wid) = YAP_NO_ERROR;
 
   REMOTE_heap_overflows(wid) = 0;
@@ -224,6 +224,11 @@ static void InitWorker(int wid) {
   REMOTE_ImportDBRefHashTableNum(wid) = 0;
   REMOTE_ImportFAILCODE(wid) = NULL;
   REMOTE_FunctorVar(wid) = FunctorVar;
+#if __ANDROID__
+
+  REMOTE_assetManager(wid) = GLOBAL_assetManager;
+  REMOTE_InAssetDir(wid) = NULL;
+#endif
 
 
   REMOTE_exo_it(wid) = NULL;

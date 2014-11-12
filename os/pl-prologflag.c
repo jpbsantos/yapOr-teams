@@ -21,6 +21,9 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+//! @addtogroup Flags
+//@{
+
 /*#define O_DEBUG 1*/
 #include "pl-incl.h"
 #ifdef __YAP_PROLOG__
@@ -74,7 +77,7 @@ we want to be able to have a lot of flags and don't harm thread_create/3
 too much.
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-static void setArgvPrologFlag(const char *flag, int argc, char **argv);
+//static void setArgvPrologFlag(const char *flag, int argc, char **argv);
 static void setTZPrologFlag(void);
 static void setVersionPrologFlag(void);
 static void initPrologFlagTable(void);
@@ -196,6 +199,7 @@ setPrologFlag(const char *name, int flags, ...)
       text.canonical = FALSE;
 
       f->value.a = textToAtom(&text);	/* registered: ok */
+
       PL_free_text(&text);
 
       break;
@@ -283,6 +287,7 @@ setUnknown(term_t value, atom_t a, Module m)
   else
     return PL_error(NULL, 0, NULL, ERR_DOMAIN, ATOM_unknown, value);
 
+#ifndef __YAP_PROLOG__
   if ( !(flags&UNKNOWN_ERROR) && (m == MODULE_user || m == MODULE_system) )
   { GET_LD
 
@@ -293,10 +298,11 @@ setUnknown(term_t value, atom_t a, Module m)
       return PL_error(NULL, 0, NULL, ERR_PERMISSION,
 		      ATOM_modify, ATOM_flag, key);
     }
-
+    
     if ( !SYSTEM_MODE )
       printMessage(ATOM_warning, PL_CHARS, "unknown_in_module_user");
   }
+#endif
 
   m->flags = flags;
 
@@ -798,17 +804,17 @@ unify_prolog_flag_value(Module m, atom_t key, prolog_flag *f, term_t val)
 { GET_LD
 
   if ( key == ATOM_character_escapes )
-  { atom_t v = (true(m, M_CHARESCAPE) ? ATOM_true : ATOM_false);
+  { atom_t v = (True(m, M_CHARESCAPE) ? ATOM_true : ATOM_false);
 
     return PL_unify_atom(val, v);
   } else if ( key == ATOM_double_quotes )
   { atom_t v;
 
-    if ( true(m, DBLQ_CHARS) )
+    if ( True(m, DBLQ_CHARS) )
       v = ATOM_chars;
-    else if ( true(m, DBLQ_ATOM) )
+    else if ( True(m, DBLQ_ATOM) )
       v = ATOM_atom;
-    else if ( true(m, DBLQ_STRING) )
+    else if ( True(m, DBLQ_STRING) )
       v = ATOM_string;
     else
       v = ATOM_codes;
@@ -855,7 +861,6 @@ unify_prolog_flag_value(Module m, atom_t key, prolog_flag *f, term_t val)
   { case FT_BOOL:
       if ( f->index >= 0 )
       { unsigned int mask = (unsigned int)1 << (f->index-1);
-
 	return PL_unify_bool_ex(val, truePrologFlag(mask) != FALSE);
       }
       /*FALLTHROUGH*/
@@ -1101,11 +1106,7 @@ initPrologFlags(void)
 #else
   setPrologFlag("dialect", FT_ATOM|FF_READONLY, "yap");
   setPrologFlag("home", FT_ATOM|FF_READONLY, YAP_ROOTDIR);
-  if (GLOBAL_argv && GLOBAL_argv[0]) {
-    Yap_TrueFileName (GLOBAL_argv[0], LOCAL_FileNameBuf, FALSE);
-    setPrologFlag("executable", FT_ATOM|FF_READONLY, LOCAL_FileNameBuf);
-  } else
-    setPrologFlag("executable", FT_ATOM|FF_READONLY, Yap_FindExecutable());
+  setPrologFlag("executable", FT_ATOM|FF_READONLY, Yap_FindExecutable());
 #endif
 #if defined(HAVE_GETPID) || defined(EMULATE_GETPID)
   setPrologFlag("pid", FT_INTEGER|FF_READONLY, getpid());
@@ -1133,7 +1134,7 @@ initPrologFlags(void)
   setPrologFlag("agc_margin",FT_INTEGER,	       GD->atoms.margin);
 #endif
 #endif
-#if defined(HAVE_DLOPEN) || defined(HAVE_SHL_LOAD) || defined(EMULATE_DLOPEN)
+#if defined(HAVE_DLOPEN) || defined(HAVE_SHL_LOAD) || defined(EMULATE_DLOPEN) || defined(HAVE_LOAD_LIBRARY)
   setPrologFlag("open_shared_object",	  FT_BOOL|FF_READONLY, TRUE, 0);
   setPrologFlag("shared_object_extension",	  FT_ATOM|FF_READONLY, SO_EXT);
   setPrologFlag("shared_object_search_path", FT_ATOM|FF_READONLY, SO_PATH);
@@ -1202,11 +1203,7 @@ initPrologFlags(void)
   setPrologFlag("occurs_check", FT_ATOM, "false");
   setPrologFlag("access_level", FT_ATOM, "user");
   setPrologFlag("double_quotes", FT_ATOM, "codes");
-#ifdef __YAP_PROLOG__
-  setPrologFlag("unknown", FT_ATOM, "fail");
-#else
   setPrologFlag("unknown", FT_ATOM, "error");
-#endif
   setPrologFlag("debug", FT_BOOL, FALSE, 0);
   setPrologFlag("verbose", FT_ATOM|FF_KEEP, GD->options.silent ? "silent" : "normal");
   setPrologFlag("verbose_load", FT_ATOM, "normal");
@@ -1246,11 +1243,14 @@ initPrologFlags(void)
   setTZPrologFlag();
   setOSPrologFlags();
   setVersionPrologFlag();
+#ifndef __YAP_PROLOG__
   setArgvPrologFlag("os_argv", GD->cmdline.os_argc,   GD->cmdline.os_argv);
   setArgvPrologFlag("argv",    GD->cmdline.appl_argc, GD->cmdline.appl_argv);
+#endif
 }
 
 
+#ifndef __YAP_PROLOG__
 static void
 setArgvPrologFlag(const char *flag, int argc, char **argv)
 { GET_LD
@@ -1270,7 +1270,7 @@ setArgvPrologFlag(const char *flag, int argc, char **argv)
   setPrologFlag(flag, FT_TERM, l);
   PL_discard_foreign_frame(fid);
 }
-
+#endif
 
 static void
 setTZPrologFlag(void)
@@ -1327,3 +1327,6 @@ BeginPredDefs(prologflag)
   PRED_DEF("$swi_set_prolog_flag",    2, set_prolog_flag,    PL_FA_ISO)
   PRED_DEF("$swi_create_prolog_flag", 3, create_prolog_flag, 0)
 EndPredDefs
+
+  //! @}
+

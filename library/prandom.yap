@@ -15,6 +15,11 @@
 *									 *
 *************************************************************************/
 
+/**
+ @groupdef PseudoRandom Van Gelder Random Number Generator
+ @ingroup YAPBuiltins
+ @{
+*/
 
 % The following code produces the same random numbers as my previous 
 % ranpkg.pl, but is more accurately documented and slightly more 
@@ -43,6 +48,47 @@
 % Its drawback is the lack of randomness of low-order bits.
 
 
+/** @pred rannum(- _I_) 
+
+
+Produces a random non-negative integer  _I_ whose low bits are not
+all that random, so it should be scaled to a smaller range in general.
+The integer  _I_ is in the range 0 .. 2^(w-1) - 1. You can use:
+
+~~~~~
+rannum(X) :- yap_flag(max_integer,MI), rannum(R), X is R/MI.
+~~~~~
+to obtain a floating point number uniformly distributed between 0 and 1.
+
+ 
+*/
+/** @pred ranstart 
+
+
+Initialize the random number generator using a built-in seed. The
+ranstart/0 built-in is always called by the system when loading
+the package.
+
+ 
+*/
+/** @pred ranstart(+ _Seed_)
+
+Initialize the random number generator with user-defined  _Seed_. The
+same  _Seed_ always produces the same sequence of numbers.
+
+ 
+*/
+/** @pred ranunif(+ _Range_,- _I_) 
+
+
+ranunif/2 produces a uniformly distributed non-negative random
+integer  _I_ over a caller-specified range  _R_.  If range is  _R_,
+the result is in 0 ..  _R_-1.
+
+
+
+
+ */
 :- module(prandom, [
 	ranstart/0,
 	ranstart/1,
@@ -96,3 +142,4 @@ ranunif(Range, Unif) :-
 	Unif is (Raw * Range) >> (Wsize-1).
 
 
+/%%! @}

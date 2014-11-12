@@ -15,13 +15,57 @@
 *									 *
 *************************************************************************/
 
+/** 
+
+@addtogroup YAPControl
+@{
+
+*/
+
+:- system_module( '$_init', [!/0,
+        (:-)/1,
+        (?-)/1,
+        []/0,
+        extensions_to_present_answer/1,
+        fail/0,
+        false/0,
+        goal_expansion/2,
+        goal_expansion/3,
+        otherwise/0,
+        prolog_booting/0,
+        term_expansion/2,
+        version/2,
+	'$do_log_upd_clause'/6,
+        '$do_log_upd_clause0'/6,
+        '$do_log_upd_clause_erase'/6,
+        '$do_static_clause'/5], [
+        '$system_module'/1]).
+
+:- use_system_module( '$_boot', ['$cut_by'/1]).
+
+'prolog_booting'.
+
 % This is yap's init file
 % should be consulted first step after booting
 
 % These are pseudo declarations
 % so that the user will get a redefining system predicate
+/** @pred  fail is iso 
+
+
+Always fails.
+
+ 
+*/
 fail :- fail.
 
+/** @pred  false is iso 
+
+
+The same as fail.
+
+ 
+*/
 false :- fail.
 
 otherwise.
@@ -67,13 +111,25 @@ otherwise.
 :- bootstrap('errors.yap').
 :- bootstrap('lists.yap').
 :- bootstrap('consult.yap').
+:- bootstrap('preddecls.yap').
+
+
+:- bootstrap('atoms.yap').
+:- bootstrap('os.yap').
 :- bootstrap('absf.yap').
 
-:- [	 'utils.yap',
+
+
+:- [	 'directives.yap',
+	 'utils.yap',
 	 'control.yap',
 	 'arith.yap',
-	 'directives.yap',
-	 'flags.yap'].
+	 'flags.yap'
+   ].
+
+:- [	 'preds.yap',
+	 'modules.yap'
+   ].
 
 :- compile_expressions.
 
@@ -86,10 +142,9 @@ otherwise.
 	 'grammar.yap',
 	 'ground.yap',
 	 'listing.yap',
-	 'preds.yap',
+         'arithpreds.yap',
 	 % modules must be after preds, otherwise we will have trouble
 	 % with meta-predicate expansion being invoked
-	 'modules.yap',
 	 % must follow grammar
 	 'eval.yap',
 	 'signals.yap',
@@ -109,6 +164,8 @@ otherwise.
          'qly.yap',
          'udi.yap'].
 
+:- meta_predicate(log_event(+,:)).
+
 :- dynamic prolog:'$user_defined_flag'/4.
 
 :- dynamic prolog:'$parent_module'/2.
@@ -117,8 +174,6 @@ otherwise.
 
 :-	 ['protect.yap'].
 
-:- source.
-
 version(yap,[6,3]).
 
 :- op(1150,fx,(mode)).
@@ -126,6 +181,8 @@ version(yap,[6,3]).
 :- dynamic 'extensions_to_present_answer'/1.
 
 :- 	['arrays.yap'].
+
+:- 	['undefined.yap'].
 
 :- use_module('messages.yap').
 :- use_module('hacks.yap').
@@ -137,16 +194,8 @@ version(yap,[6,3]).
 :- use_module('swi.yap').
 :- use_module('../swi/library/predopts.pl').
 :- use_module('../swi/library/menu.pl').
+:- use_module('../library/ypp.yap').
 
-
-'$system_module'('$attributes').
-'$system_module'('$coroutining').
-'$system_module'('$hacks').
-'$system_module'('$history').
-'$system_module'('$messages').
-'$system_module'('$predopts').
-'$system_module'('$swi').
-'$system_module'('$win_menu').
 
 
 yap_hacks:cut_by(CP) :- '$$cut_by'(CP).
@@ -155,14 +204,6 @@ yap_hacks:cut_by(CP) :- '$$cut_by'(CP).
 
 :-	'$swi_set_prolog_flag'(generate_debug_info,true).
 
-
-:- multifile user:library_directory/1.
-
-:- dynamic user:library_directory/1.
-
-:- multifile user:commons_directory/1.
-
-:- dynamic user:commons_directory/1.
 
 :- recorda('$dialect',yap,_).
 
@@ -186,8 +227,24 @@ yap_hacks:cut_by(CP) :- '$$cut_by'(CP).
 :- multifile
 	prolog:comment_hook/3.
 
+:- source.
+
 :- module(user).
 
+/** @pred  _CurrentModule_:goal_expansion(+ _G_,+ _M_,- _NG_), user:goal_expansion(+ _G_,+ _M_,- _NG_) 
+
+
+YAP now supports goal_expansion/3. This is an user-defined
+procedure that is called after term expansion when compiling or
+asserting goals for each sub-goal in a clause. The first argument is
+bound to the goal and the second to the module under which the goal
+ _G_ will execute. If goal_expansion/3 succeeds the new
+sub-goal  _NG_ will replace  _G_ and will be processed in the same
+way. If goal_expansion/3 fails the system will use the default
+rules.
+
+ 
+*/
 :- multifile goal_expansion/3.
 
 :- dynamic goal_expansion/3.
@@ -200,27 +257,31 @@ yap_hacks:cut_by(CP) :- '$$cut_by'(CP).
 
 :- dynamic system:goal_expansion/2.
 
-:- multifile user:prolog_file_type/2.
-
-:- dynamic user:prolog_file_type/2.
-
-user:prolog_file_type(yap, prolog).
-user:prolog_file_type(pl, prolog).
-user:prolog_file_type(prolog, prolog).
-user:prolog_file_type(A, prolog) :-
-	current_prolog_flag(associate, A),
-	A \== prolog,
-	A \==pl,
-	A \== yap.
-%user:prolog_file_type(qlf, prolog).
-%user:prolog_file_type(qlf, qlf).
-user:prolog_file_type(A, executable) :-
-	current_prolog_flag(shared_object_extension, A).
-
-
 :- multifile goal_expansion/2.
 
 :- dynamic goal_expansion/2.
+
+
+/** @pred  _CurrentModule_:term_expansion( _T_,- _X_),  user:term_expansion( _T_,- _X_) 
+
+
+This user-defined predicate is called by `expand_term/3` to
+preprocess all terms read when consulting a file. If it succeeds:
+
++ 
+If  _X_ is of the form `:- G` or `?- G`, it is processed as
+a directive.
++ 
+If  _X_ is of the form `$source_location`( _File_, _Line_): _Clause_` it is processed as if from `File` and line `Line`.
+
++ 
+If  _X_ is a list, all terms of the list are asserted or processed
+as directives.
++ The term  _X_ is asserted instead of  _T_.
+
+
+ 
+*/
 
 :- multifile term_expansion/2.
 
@@ -230,12 +291,21 @@ user:prolog_file_type(A, executable) :-
 
 :- dynamic system:term_expansion/2.
 
-:- multifile file_search_path/2.
-
-:- dynamic file_search_path/2.
-
 :- multifile swi:swi_predicate_table/4.
 
+/** @pred  user:message_hook(+ _Term_, + _Kind_, + _Lines_) 
+
+
+Hook predicate that may be define in the module `user` to intercept
+messages from print_message/2.  _Term_ and  _Kind_ are the
+same as passed to print_message/2.  _Lines_ is a list of
+format statements as described with print_message_lines/3.
+
+This predicate should be defined dynamic and multifile to allow other
+modules defining clauses for it too.
+
+ 
+*/
 :- multifile user:message_hook/3.
 
 :- dynamic user:message_hook/3.
@@ -244,31 +314,34 @@ user:prolog_file_type(A, executable) :-
 
 :- dynamic user:portray_message/2.
 
+/** @pred  exception(+ _Exception_, + _Context_, - _Action_) 
+
+
+Dynamic predicate, normally not defined. Called by the Prolog system on run-time exceptions that can be repaired `just-in-time`. The values for  _Exception_ are described below. See also catch/3 and throw/1.
+If this hook predicate succeeds it must instantiate the  _Action_ argument to the atom `fail` to make the operation fail silently, `retry` to tell Prolog to retry the operation or `error` to make the system generate an exception. The action `retry` only makes sense if this hook modified the environment such that the operation can now succeed without error.
+
++ `undefined_predicate`
+ _Context_ is instantiated to a predicate-indicator ( _Module:Name/Arity_). If the predicate fails Prolog will generate an existence_error exception. The hook is intended to implement alternatives to the SWI built-in autoloader, such as autoloading code from a database. Do not use this hook to suppress existence errors on predicates. See also `unknown`.
++ `undefined_global_variable`
+ _Context_ is instantiated to the name of the missing global variable. The hook must call nb_setval/2 or b_setval/2 before returning with the action retry.
+
+
+
+
+
+ */
+
+
 :- multifile user:exception/3.
 
 :- dynamic user:exception/3.
 
-file_search_path(library, Dir) :-
-	library_directory(Dir).
-file_search_path(commons, Dir) :-
-	commons_directory(Dir0).
-file_search_path(swi, Home) :-
-	current_prolog_flag(home, Home).
-file_search_path(yap, Home) :-
-        current_prolog_flag(home, Home).
-file_search_path(system, Dir) :-
-	prolog_flag(host_type, Dir).
-file_search_path(foreign, yap('lib/Yap')).
-file_search_path(path, C) :-
-    (   getenv('PATH', A),
-	(   current_prolog_flag(windows, true)
-	->  atomic_list_concat(B, ;, A)
-	;   atomic_list_concat(B, :, A)
-	),
-	lists:member(C, B)
-    ).
-
-:- yap_flag(user:unknown,error). 
+:- yap_flag(unknown,error). 
 
 :- stream_property(user_input, tty(true)) -> set_prolog_flag(readline, true) ; true.
 
+
+
+/**
+@}
+*/

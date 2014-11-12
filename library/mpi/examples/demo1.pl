@@ -2,6 +2,7 @@
 %% konstant@let.rug.nl, Thu Jan 24 2002
 %%
 
+:- use_module(library(mpi)).
 
 % make the `floor' operator return integer values
 :- set_prolog_flag(language, iso).
@@ -43,7 +44,9 @@ do(0, NumProc):-
 	  set_value(n, NewCounter),
 	  NewCounter == 1,
 	!,
-	format( '0: Result: ~q.~n', [
+	format( '0: Result: ~q.~n', [NewAcc]).
+
+
 do(Rank, NumProc):-
 	!,
 	% catch the task broadcast

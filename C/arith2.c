@@ -18,10 +18,111 @@
 static char     SccsId[] = "%W% %G%";
 #endif
 
-/*
- * This file implements unary arithmetic operations in YAP
- *
- */
+/**
+
+   @file arith2.c
+
+   @addtogroup arithmetic_operators
+
+These are the binary numeric operators currently supported by YAP.
+
+  - <b> _X_+ _Y_ [ISO]</b><p>
+
+    Sum.
+
+  - <b> _X_- _Y_ [ISO]</b><p>
+
+    Difference.
+
+  - <b> _X_\* _Y_ [ISO]</b><p>
+
+    Product.
+
+  - <b> _X_/ _Y_ [ISO]</b><p>
+
+    Quotient.
+
+  - <b> _X_// _Y_ [ISO]</b><p>
+
+    Integer quotient.
+
+  - <b> _X_ mod  _Y_ [ISO]</b><p> @anchor mod_2
+
+    Integer module operator, always positive.
+
+  - <b> _X_ rem  _Y_ [ISO]</b><p> @anchor rem_2
+
+    Integer remainder, similar to `mod` but always has the same sign as `X`.
+
+  - <b>  _X_ div  _Y_ [ISO]</b><p> @anchor div_2
+
+    Integer division, as if defined by `( _X_ -  _X_ mod  _Y_)//  _Y_`.
+
+  - <b> max( _X_, _Y_) [ISO]</b><p> @anchor max_2
+
+    The greater value of  _X_ and  _Y_.
+
+  - <b> min( _X_, _Y_) [ISO]</b><p> @anchor min_2
+
+    The lesser value of  _X_ and  _Y_.
+
+  - <b> _X_ ^  _Y_ [ISO]</b><p>
+
+     _X_ raised to the power of  _Y_, (from the C-Prolog syntax).
+
+  - <b> exp( _X_, _Y_)</b><p> @anchor exp_2
+
+     _X_ raised to the power of  _Y_, (from the Quintus Prolog syntax).
+
+  - <b> _X_ \*\*  _Y_ [ISO]</b><p>
+
+     _X_ raised to the power of  _Y_  (from ISO).
+
+  - <b> _X_ /\\  _Y_ [ISO]</b><p>
+
+    Integer bitwise conjunction.
+
+  - <b> _X_ \\/  _Y_ [ISO]</b><p>
+
+    Integer bitwise disjunction.
+
+  - <b> _X_ #  _Y_</b><p>
+
+    Integer bitwise exclusive disjunction.
+
+  - <b> _X_ \>\<  _Y_</b><p>
+
+    Integer bitwise exclusive disjunction.
+
+  - <b> xor( _X_ ,  _Y_) [ISO]</b><p> @anchor xor_2
+
+    Integer bitwise exclusive disjunction.
+
+  - <b> _X_ \<\<  _Y_</b><p>
+
+    Integer bitwise left logical shift of  _X_ by  _Y_ places.
+
+  - <b> _X_ \>\>  _Y_ [ISO]</b><p>
+
+    Integer bitwise right logical shift of  _X_ by  _Y_ places.
+
+  - <b> gcd( _X_, _Y_)</b><p> @anchor gcd_2
+
+    The greatest common divisor of the two integers  _X_ and  _Y_.
+
+  - <b> atan( _X_, _Y_)</b><p> @anchor atan_2
+
+    Four-quadrant arc tangent. Also available as `atan2/2`.
+
+  - <b> atan2( _X_, _Y_) [ISO]</b><p> @anchor atan2_2
+
+    Four-quadrant arc tangent.
+
+  - <b>  _X_ rdiv  _Y_ [ISO]</b><p> @anchor rdiv_2
+
+    Rational division.
+
+*/
 
 #include "Yap.h"
 #include "Yatom.h"
@@ -152,7 +253,7 @@ p_div2(Term t1, Term t2 USES_REGS) {
       /* two bignums */
       return Yap_gmp_div2_big_big(t1, t2);
     case double_e:
-      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "mod/2");
+      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "div/2");
     default:
       RERROR();
     }
@@ -181,7 +282,7 @@ p_rem(Term t1, Term t2 USES_REGS) {
 	RINT(i1%i2);
       }
     case (CELL)double_e:
-      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "mod/2");
+      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "rem/2");
     case (CELL)big_int_e:
 #ifdef USE_GMP
       return Yap_gmp_rem_int_big(IntegerOfTerm(t1), t2);
@@ -191,7 +292,7 @@ p_rem(Term t1, Term t2 USES_REGS) {
     }
     break;
   case (CELL)double_e:
-    return Yap_ArithError(TYPE_ERROR_INTEGER, t1, "mod/2");
+    return Yap_ArithError(TYPE_ERROR_INTEGER, t1, "rem/2");
   case (CELL)big_int_e:
 #ifdef USE_GMP
     switch (ETypeOfTerm(t2)) {
@@ -203,7 +304,7 @@ p_rem(Term t1, Term t2 USES_REGS) {
       /* two bignums */
       return Yap_gmp_rem_big_big(t1, t2);
     case double_e:
-      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "mod/2");
+      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "rem/2");
     default:
       RERROR();
     }
@@ -249,7 +350,7 @@ p_rdiv(Term t1, Term t2 USES_REGS) {
     case (CELL)big_int_e:
       return Yap_gmq_rdiv_big_big(t1, t2);
     case double_e:
-      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "mod/2");
+      return Yap_ArithError(TYPE_ERROR_INTEGER, t2, "rdiv/2");
     default:
       RERROR();
     }
@@ -586,12 +687,13 @@ p_exp(Term t1, Term t2 USES_REGS)
       {
 	Int i1 = IntegerOfTerm(t1);
 	Int i2 = IntegerOfTerm(t2);
-	Int pow = ipow(i1,i2);
+	Int pow;
 
 	if (i2 < 0) {
 	  return Yap_ArithError(DOMAIN_ERROR_NOT_LESS_THAN_ZERO, t2,
 		    "%d ^ %d", i1, i2);
 	}
+    pow = ipow(i1,i2);
 #ifdef USE_GMP
 	/* two integers */
 	if ((i1 && !pow)) {
@@ -1045,23 +1147,50 @@ p_binary_is( USES_REGS1 )
 {				/* X is Y	 */
   Term t = Deref(ARG2);
   Term t1, t2;
+  yap_error_number err;
 
   if (IsVarTerm(t)) {
-    Yap_ArithError(INSTANTIATION_ERROR,t, "X is Y");
+    Yap_ArithError(INSTANTIATION_ERROR,t, "VAR(X , Y)");
     return(FALSE);
   }
+  Yap_ClearExs();
   t1 = Yap_Eval(Deref(ARG3));
-  if (!Yap_FoundArithError(t1, ARG3)) {
+  if ((err = Yap_FoundArithError())) {
+    Atom name;
+    if (IsIntTerm(t)) {
+      Int i = IntOfTerm(t);
+      name = Yap_NameOfBinaryOp(i);
+    } else {
+      name = AtomOfTerm(Deref(ARG2));
+    }
+    Yap_EvalError(err,ARG3,"X is ~s/2: error in first argument ", RepAtom(name)->StrOfAE);
     return FALSE;
   }
   t2 = Yap_Eval(Deref(ARG4));
-  if (!Yap_FoundArithError(t2, ARG4)) {
+  if ((err=Yap_FoundArithError())) {
+    Atom name;
+    if (IsIntTerm(t)) {
+      Int i = IntOfTerm(t);
+      name = Yap_NameOfBinaryOp(i);
+    } else {
+      name = AtomOfTerm(Deref(ARG2));
+    }
+    Yap_EvalError(err,ARG3,"X is ~s/2: error in first argument ", RepAtom(name)->StrOfAE);
     return FALSE;
   }
   if (IsIntTerm(t)) {
-    Term tout = Yap_FoundArithError(eval2(IntOfTerm(t), t1, t2 PASS_REGS), 0L);
-    if (!tout)
+    Int i = IntOfTerm(t);
+    Term tout = eval2(i, t1, t2 PASS_REGS);
+    if ((err = Yap_FoundArithError()) != YAP_NO_ERROR) {
+      Term ts[2], terr;
+      Atom name = Yap_NameOfBinaryOp( i );
+      Functor f = Yap_MkFunctor( name, 2 );
+      ts[0] = t1;
+      ts[1] = t2;
+      terr = Yap_MkApplTerm( f, 2, ts );
+      Yap_EvalError(err, terr ,"error in %s/2 ", RepAtom(name)->StrOfAE);
       return FALSE;
+    }
     return Yap_unify_constant(ARG1,tout);
   }
   if (IsAtomTerm(t)) {
@@ -1076,18 +1205,28 @@ p_binary_is( USES_REGS1 )
       ti[0] = t;
       ti[1] = MkIntTerm(1);
       t = Yap_MkApplTerm(FunctorSlash, 2, ti);
-      Yap_Error(TYPE_ERROR_EVALUABLE, t,
-		"functor %s/%d for arithmetic expression",
-		RepAtom(name)->StrOfAE,2);
+      Yap_EvalError(TYPE_ERROR_EVALUABLE, t,
+		"functor %s/2 for arithmetic expression",
+		RepAtom(name)->StrOfAE);
       P = FAILCODE;
       return(FALSE);
     }
-    if (!(out=Yap_FoundArithError(eval2(p->FOfEE, t1, t2 PASS_REGS), 0L)))
+    out= eval2(p->FOfEE, t1, t2 PASS_REGS);
+    if ((err = Yap_FoundArithError()) != YAP_NO_ERROR) {
+      Term ts[2], terr;
+      Functor f = Yap_MkFunctor( name, 2 );
+      ts[0] = t1;
+      ts[1] = t2;
+      terr = Yap_MkApplTerm( f, 2, ts );
+      Yap_EvalError(err, terr ,"error in ~s/2 ", RepAtom(name)->StrOfAE);
       return FALSE;
+    }
     return Yap_unify_constant(ARG1,out);
   }
   return FALSE;
 }
+
+
 
 static Int 
 do_arith23(arith2_op op USES_REGS)
@@ -1095,9 +1234,11 @@ do_arith23(arith2_op op USES_REGS)
   Term t = Deref(ARG1);
   Int out;
   Term t1, t2;
+  yap_error_number err;
 
+  Yap_ClearExs();
   if (IsVarTerm(t)) {
-    Yap_ArithError(INSTANTIATION_ERROR,t, "X is Y");
+    Yap_EvalError(INSTANTIATION_ERROR,t, "X is Y");
     return(FALSE);
   }
   t1 = Yap_Eval(t);
@@ -1106,8 +1247,16 @@ do_arith23(arith2_op op USES_REGS)
   t2 = Yap_Eval(Deref(ARG2));
   if (t2 == 0L)
     return FALSE;
-  if (!(out=Yap_FoundArithError(eval2(op, t1, t2 PASS_REGS), 0L)))
-    return FALSE;
+  out= eval2(op, t1, t2 PASS_REGS);
+  if ((err=Yap_FoundArithError())) {
+      Term ts[2], t;
+      Functor f = Yap_MkFunctor( Yap_NameOfBinaryOp(op), 2 );
+      ts[0] = t1;
+      ts[1] = t2;
+      t = Yap_MkApplTerm( f, 2, ts );
+      Yap_EvalError(err, t ,"error in ~s(Y,Z) ",Yap_NameOfBinaryOp(op));
+      return FALSE;
+  }
   return Yap_unify_constant(ARG3,out);
 }
 
@@ -1165,7 +1314,7 @@ p_binary_op_as_integer( USES_REGS1 )
   Term t = Deref(ARG1);
 
   if (IsVarTerm(t)) {
-    Yap_Error(INSTANTIATION_ERROR,t, "X is Y");
+    Yap_EvalError(INSTANTIATION_ERROR,t, "X is Y");
     return(FALSE);
   }
   if (IsIntTerm(t)) {
@@ -1183,6 +1332,12 @@ p_binary_op_as_integer( USES_REGS1 )
   return(FALSE);
 }
 
+Atom
+Yap_NameOfBinaryOp(int i)
+{
+  return Yap_LookupAtom(InitBinTab[i].OpName);
+}
+
 
 void
 Yap_InitBinaryExps(void)
@@ -1193,7 +1348,7 @@ Yap_InitBinaryExps(void)
   for (i = 0; i < sizeof(InitBinTab)/sizeof(InitBinEntry); ++i) {
     AtomEntry *ae = RepAtom(Yap_LookupAtom(InitBinTab[i].OpName));
     if (ae == NULL) {
-      Yap_Error(OUT_OF_HEAP_ERROR,TermNil,"at InitBinaryExps");
+      Yap_EvalError(OUT_OF_HEAP_ERROR,TermNil,"at InitBinaryExps");
       return;
     }
     WRITE_LOCK(ae->ARWLock);

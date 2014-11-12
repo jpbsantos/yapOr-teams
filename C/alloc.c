@@ -49,8 +49,8 @@ static char SccsId[] = "%W% %G%";
 #include <stdio.h>
 
 #if __simplescalar__
-#ifdef USE_MMAP
-#undef USE_MMAP
+#ifdef USE_SYSTEM_MMAP
+#undef USE_SYSTEM_MMAP
 #endif
 #ifdef USE_SBRK
 #undef USE_SBRK
@@ -450,10 +450,10 @@ Yap_ExtendWorkSpace(Int s)
   return TRUE;
 }
 
-UInt
-Yap_ExtendWorkSpaceThroughHole(UInt s)
+size_t
+Yap_ExtendWorkSpaceThroughHole(size_t s)
 {
-  return -1;
+  return 0;
 }
 
 void
@@ -900,7 +900,7 @@ Yap_FreeWorkSpace(void)
   return TRUE;
 }
 
-#elif USE_MMAP
+#elif USE_SYSTEM_MMAP
 
 #if HAVE_UNISTD_H
 #include <unistd.h>
@@ -1194,7 +1194,7 @@ Yap_FreeWorkSpace(void)
   return 1;
 }
 
-#elif USE_SHM
+#elif USE_SYSTEM_SHM
 
 #if HAVE_SYS_SHM_H
 #include <sys/shm.h>
@@ -1591,7 +1591,7 @@ void Yap_add_memory_hole(ADDR Start, ADDR End)
 int
 Yap_ExtendWorkSpace(Int s)
 {
-#if USE_MMAP
+#if USE_SYSTEM_MMAP
   return ExtendWorkSpace(s, MAP_FIXED);
 #elif defined(_WIN32)
   return ExtendWorkSpace(s, MAP_FIXED);
@@ -1600,10 +1600,10 @@ Yap_ExtendWorkSpace(Int s)
 #endif
 }
 
-UInt
-Yap_ExtendWorkSpaceThroughHole(UInt s)
+size_t
+Yap_ExtendWorkSpaceThroughHole(size_t s)
 {
-#if USE_MMAP || defined(_WIN32) || defined(__CYGWIN__)
+#if USE_SYSTEM_MMAP || defined(_WIN32) || defined(__CYGWIN__)
   MALLOC_T WorkSpaceTop0 = WorkSpaceTop;
 #if SIZEOF_INT_P==4
   while (WorkSpaceTop < (MALLOC_T)0xc0000000L) {
@@ -1618,7 +1618,7 @@ Yap_ExtendWorkSpaceThroughHole(UInt s)
     /* 487 happens when you step over someone else's memory */
     if (GetLastError() != 487) {
       WorkSpaceTop = WorkSpaceTop0;
-      return -1;
+      return 0;
     }
 #endif
 #elif SIZEOF_INT_P==8
@@ -1636,7 +1636,7 @@ Yap_ExtendWorkSpaceThroughHole(UInt s)
       /* 487 happens when you step over someone else's memory */
       if (GetLastError() != 487) {
 	WorkSpaceTop = WorkSpaceTop0;
-	return -1;
+	return 0;
       }
 #endif
     }
@@ -1644,13 +1644,13 @@ Yap_ExtendWorkSpaceThroughHole(UInt s)
   }
   WorkSpaceTop = WorkSpaceTop0;
 #endif
-  return -1;
+  return 0;
 }
 
 void
 Yap_AllocHole(UInt actual_request, UInt total_size)
 {
-#if (USE_MMAP || defined(_WIN32) || defined(__CYGWIN__)) && !USE_DL_MALLOC
+#if (USE_SYSTEM_MMAP || defined(_WIN32) || defined(__CYGWIN__)) && !USE_DL_MALLOC
   /* where we were when the hole was created,
    also where is the hole store */
   ADDR WorkSpaceTop0 = WorkSpaceTop-total_size;

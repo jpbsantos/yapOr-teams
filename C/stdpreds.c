@@ -310,10 +310,6 @@ static Int cont_current_op( USES_REGS1 );
 static Int init_current_atom_op( USES_REGS1 );
 static Int cont_current_atom_op( USES_REGS1 );
 static Int p_flags( USES_REGS1 );
-static int AlreadyHidden(char *);
-static Int p_hide( USES_REGS1 );
-static Int p_hidden( USES_REGS1 );
-static Int p_unhide( USES_REGS1 );
 static Int TrailMax(void);
 static Int GlobalMax(void);
 static Int LocalMax(void);
@@ -610,22 +606,35 @@ p_univ( USES_REGS1 )
     }
     if (IsNumTerm(twork)) {
       Term tt = TailOfTerm(t2);
-      if (IsVarTerm(tt) || tt != MkAtomTerm(AtomNil)) {
-	Yap_Error(TYPE_ERROR_ATOM, twork, "(=..)/2");
+      if (IsVarTerm(tt)) {
+	Yap_Error(INSTANTIATION_ERROR, tt, "(=..)/2");
+	return (FALSE);
+      }
+      if ( tt != MkAtomTerm(AtomNil)) {
+	Yap_Error(TYPE_ERROR_ATOMIC, twork, "(=..)/2");
 	return (FALSE);
       }
       return (Yap_unify_constant(ARG1, twork));
     }
     if (!IsAtomTerm(twork)) {
-      Yap_Error(TYPE_ERROR_ATOM, twork, "(=..)/2");
-      return (FALSE);
+      Term tt = TailOfTerm(t2);
+      if (IsVarTerm(tt)) {
+	Yap_Error(INSTANTIATION_ERROR, twork, "(=..)/2");
+	return(FALSE);
+      } else if (tt == MkAtomTerm(AtomNil)) {
+	Yap_Error(TYPE_ERROR_ATOMIC, twork, "(=..)/2");
+	return (FALSE);
+      } else {
+	Yap_Error(TYPE_ERROR_ATOM, twork, "(=..)/2");
+	return (FALSE);
+      }
     }      
     at = AtomOfTerm(twork);
     twork = TailOfTerm(t2);
     if (IsVarTerm(twork)) {
       Yap_Error(INSTANTIATION_ERROR, twork, "(=..)/2");
       return(FALSE);
-    } else if (!IsPairTerm(twork)) {
+    } else  if (!IsPairTerm(twork)) {
       if (twork != TermNil) {
 	Yap_Error(TYPE_ERROR_LIST, ARG2, "(=..)/2");
 	return(FALSE);
@@ -840,7 +849,7 @@ cont_current_predicate_for_atom( USES_REGS1 )
     FunctorEntry *pp = RepFunctorProp(pf);
     if (IsFunctorProperty(pp->KindOfPE)) {
       Prop p0;
-      READ_LOCK(pp->FRWLock);
+      FUNC_READ_LOCK(pp);
       p0 = pp->PropsOfFE;
       if (p0) {
 	PredEntry *p = RepPredProp(p0);
@@ -849,7 +858,7 @@ cont_current_predicate_for_atom( USES_REGS1 )
 	  UInt ar = p->ArityOfPE;
 	  /* we found the predicate */
 	  EXTRA_CBACK_ARG(3,1) = MkIntegerTerm((Int)(pp->NextOfPE));
-	  READ_UNLOCK(pp->FRWLock);
+	  FUNC_READ_UNLOCK(pp);
 	  return 
 	    Yap_unify(ARG3,MkIntegerTerm(ar));
 	} else if (p->NextOfPE) {
@@ -862,7 +871,7 @@ cont_current_predicate_for_atom( USES_REGS1 )
 		p->ModuleOfPred == mod)
 	      {
 		READ_UNLOCK(PredHashRWLock);
-		READ_UNLOCK(pp->FRWLock);
+        FUNC_READ_UNLOCK(pp);
 		/* we found the predicate */
 		EXTRA_CBACK_ARG(3,1) = MkIntegerTerm((Int)(p->NextOfPE));
 		return Yap_unify(ARG3,MkIntegerTerm(p->ArityOfPE));
@@ -871,7 +880,7 @@ cont_current_predicate_for_atom( USES_REGS1 )
 	  }
 	}
       }
-      READ_UNLOCK(pp->FRWLock);
+      FUNC_READ_UNLOCK(pp);
     } else if (pp->KindOfPE == PEProp) {
       PredEntry *pe = RepPredProp(pf);
       PELOCK(31,pe);
@@ -1170,117 +1179,6 @@ p_set_flag( USES_REGS1 )
   return TRUE;
 }
 
-
-static int 
-AlreadyHidden(char *name)
-{
-  AtomEntry      *chain;
-
-  READ_LOCK(INVISIBLECHAIN.AERWLock);
-  chain = RepAtom(INVISIBLECHAIN.Entry);
-  READ_UNLOCK(INVISIBLECHAIN.AERWLock);
-  while (!EndOfPAEntr(chain) && strcmp(chain->StrOfAE, name) != 0)
-    chain = RepAtom(chain->NextOfAE);
-  if (EndOfPAEntr(chain))
-    return (FALSE);
-  return (TRUE);
-}
-
-static Int 
-p_hide( USES_REGS1 )
-{				/* hide(+Atom)		 */
-  Atom            atomToInclude;
-  Term t1 = Deref(ARG1);
-
-  if (IsVarTerm(t1)) {
-    Yap_Error(INSTANTIATION_ERROR,t1,"hide/1");
-    return(FALSE);
-  }
-  if (!IsAtomTerm(t1)) {
-    Yap_Error(TYPE_ERROR_ATOM,t1,"hide/1");
-    return(FALSE);
-  }
-  atomToInclude = AtomOfTerm(t1);
-  if (AlreadyHidden(RepAtom(atomToInclude)->StrOfAE)) {
-    Yap_Error(SYSTEM_ERROR,t1,"an atom of name %s was already hidden",
-	  RepAtom(atomToInclude)->StrOfAE);
-    return(FALSE);
-  }
-  Yap_ReleaseAtom(atomToInclude);
-  WRITE_LOCK(INVISIBLECHAIN.AERWLock);
-  WRITE_LOCK(RepAtom(atomToInclude)->ARWLock);
-  RepAtom(atomToInclude)->NextOfAE = INVISIBLECHAIN.Entry;
-  WRITE_UNLOCK(RepAtom(atomToInclude)->ARWLock);
-  INVISIBLECHAIN.Entry = atomToInclude;
-  WRITE_UNLOCK(INVISIBLECHAIN.AERWLock);
-  return (TRUE);
-}
-
-static Int 
-p_hidden( USES_REGS1 )
-{				/* '$hidden'(+F)		 */
-  Atom            at;
-  AtomEntry      *chain;
-  Term t1 = Deref(ARG1);
-
-  if (IsVarTerm(t1))
-    return (FALSE);
-  if (IsAtomTerm(t1))
-    at = AtomOfTerm(t1);
-  else if (IsApplTerm(t1))
-    at = NameOfFunctor(FunctorOfTerm(t1));
-  else
-    return (FALSE);
-  READ_LOCK(INVISIBLECHAIN.AERWLock);
-  chain = RepAtom(INVISIBLECHAIN.Entry);
-  while (!EndOfPAEntr(chain) && AbsAtom(chain) != at)
-    chain = RepAtom(chain->NextOfAE);
-  READ_UNLOCK(INVISIBLECHAIN.AERWLock);
-  if (EndOfPAEntr(chain))
-    return (FALSE);
-  return (TRUE);
-}
-
-
-static Int 
-p_unhide( USES_REGS1 )
-{				/* unhide(+Atom)		 */
-  AtomEntry      *atom, *old, *chain;
-  Term t1 = Deref(ARG1);
-
-  if (IsVarTerm(t1)) {
-    Yap_Error(INSTANTIATION_ERROR,t1,"unhide/1");
-    return(FALSE);
-  }
-  if (!IsAtomTerm(t1)) {
-    Yap_Error(TYPE_ERROR_ATOM,t1,"unhide/1");
-    return(FALSE);
-  }
-  atom = RepAtom(AtomOfTerm(t1));
-  WRITE_LOCK(atom->ARWLock);
-  if (atom->PropsOfAE != NIL) {
-    Yap_Error(SYSTEM_ERROR,t1,"cannot unhide an atom in use");
-    return(FALSE);
-  }
-  WRITE_LOCK(INVISIBLECHAIN.AERWLock);
-  chain = RepAtom(INVISIBLECHAIN.Entry);
-  old = NIL;
-  while (!EndOfPAEntr(chain) && strcmp(chain->StrOfAE, atom->StrOfAE) != 0) {
-    old = chain;
-    chain = RepAtom(chain->NextOfAE);
-  }
-  if (EndOfPAEntr(chain))
-    return (FALSE);
-  atom->PropsOfAE = chain->PropsOfAE;
-  if (old == NIL)
-    INVISIBLECHAIN.Entry = chain->NextOfAE;
-  else
-    old->NextOfAE = chain->NextOfAE;
-  WRITE_UNLOCK(INVISIBLECHAIN.AERWLock);
-  WRITE_UNLOCK(atom->ARWLock);
-  return (TRUE);
-}
-
 void
 Yap_show_statistics(void)
 {
@@ -1298,21 +1196,21 @@ Yap_show_statistics(void)
 #endif
   frag  = (100.0*(heap_space_taken-HeapUsed))/heap_space_taken;
 
-  fprintf(GLOBAL_stderr, "Code Space:  %ld (%ld bytes needed, %ld bytes used, fragmentation %.3f%%).\n", 
+  Sfprintf(GLOBAL_stderr, "Code Space:  %ld (%ld bytes needed, %ld bytes used, fragmentation %.3f%%).\n", 
 	     (unsigned long int)(Unsigned (H0) - Unsigned (Yap_HeapBase)),
 	     (unsigned long int)(Unsigned(HeapTop)-Unsigned(Yap_HeapBase)),
 	     (unsigned long int)(HeapUsed),
 	     frag);
-  fprintf(GLOBAL_stderr, "Stack Space: %ld (%ld for Global, %ld for local).\n", 
+  Sfprintf(GLOBAL_stderr, "Stack Space: %ld (%ld for Global, %ld for local).\n", 
 	     (unsigned long int)(sizeof(CELL)*(LCL0-H0)),
 	     (unsigned long int)(sizeof(CELL)*(HR-H0)),
 	     (unsigned long int)(sizeof(CELL)*(LCL0-ASP)));
-  fprintf(GLOBAL_stderr, "Trail Space: %ld (%ld used).\n", 
+  Sfprintf(GLOBAL_stderr, "Trail Space: %ld (%ld used).\n", 
 	     (unsigned long int)(sizeof(tr_fr_ptr)*(Unsigned(LOCAL_TrailTop)-Unsigned(LOCAL_TrailBase))),
 	     (unsigned long int)(sizeof(tr_fr_ptr)*(Unsigned(TR)-Unsigned(LOCAL_TrailBase))));
-  fprintf(GLOBAL_stderr, "Runtime: %lds.\n", (unsigned long int)(runtime ( PASS_REGS1 )));
-  fprintf(GLOBAL_stderr, "Cputime: %lds.\n", (unsigned long int)(Yap_cputime ()));
-  fprintf(GLOBAL_stderr, "Walltime: %lds.\n", (unsigned long int)(Yap_walltime ()));
+  Sfprintf(GLOBAL_stderr, "Runtime: %lds.\n", (unsigned long int)(runtime ( PASS_REGS1 )));
+  Sfprintf(GLOBAL_stderr, "Cputime: %lds.\n", (unsigned long int)(Yap_cputime ()));
+  Sfprintf(GLOBAL_stderr, "Walltime: %lds.\n", (unsigned long int)(Yap_walltime ()));
 }
 
 static Int
@@ -1628,10 +1526,29 @@ mk_argc_list( USES_REGS1 )
   return(t);
 }
 
+static Term
+mk_os_argc_list( USES_REGS1 )
+{
+  int i =0;
+  Term t = TermNil;
+  for (i = 0 ; i < GLOBAL_argc; i++) {
+    char *arg = GLOBAL_argv[i];
+    t = MkPairTerm(MkAtomTerm(Yap_LookupAtom(arg)),t);
+  } 
+  return(t);
+}
+
 static Int 
 p_argv( USES_REGS1 )
 {
   Term t = mk_argc_list( PASS_REGS1 );
+  return Yap_unify(t, ARG1);
+}
+
+static Int 
+p_os_argv( USES_REGS1 )
+{
+  Term t = mk_os_argc_list( PASS_REGS1 );
   return Yap_unify(t, ARG1);
 }
 
@@ -1680,6 +1597,8 @@ p_access_yap_flags( USES_REGS1 )
       tout = MkPairTerm(MkAtomTerm(AtomLocal), tout);
     else if (IsMode_Batched(yap_flags[flag]))
       tout = MkPairTerm(MkAtomTerm(AtomBatched), tout);
+    else if (IsMode_CoInductive(yap_flags[flag]))
+      tout = MkPairTerm(MkAtomTerm(AtomCoInductive), tout);
 #else
     tout = MkAtomTerm(AtomFalse);
 #endif /* TABLING */
@@ -1750,6 +1669,11 @@ p_set_yap_flags( USES_REGS1 )
     if (value != 0 && value !=  1)
       return(FALSE);
     yap_flags[SOURCE_MODE_FLAG] = value;
+    break;
+  case FLOATING_POINT_EXCEPTION_MODE_FLAG:
+    if (value != 0 && value !=  1)
+      return(FALSE);
+    yap_flags[FLOATING_POINT_EXCEPTION_MODE_FLAG] = value;
     break;
   case WRITE_QUOTED_STRING_FLAG:
     if (value != 0 && value !=  1)
@@ -1822,6 +1746,13 @@ p_set_yap_flags( USES_REGS1 )
 	tab_ent = TabEnt_next(tab_ent);
       }
       SetMode_GlobalTrie(yap_flags[TABLING_MODE_FLAG]);
+    } else if (value == 7) {  /* CoInductive */
+      tab_ent_ptr tab_ent = GLOBAL_root_tab_ent;
+      while(tab_ent) {
+        SetMode_CoInductive(TabEnt_mode(tab_ent));
+        tab_ent = TabEnt_next(tab_ent);
+      }
+      SetMode_CoInductive(yap_flags[TABLING_MODE_FLAG]);
     } 
     break;
 #endif /* TABLING */
@@ -1983,11 +1914,54 @@ Yap_InitCPreds(void)
 {
   /* numerical comparison */
   Yap_InitCPred("set_value", 2, p_setval, SafePredFlag|SyncPredFlag);
+/** @pred  set_value(+ _A_,+ _C_) 
+
+
+Associate atom  _A_ with constant  _C_.
+
+The `set_value` and `get_value` built-ins give a fast alternative to
+the internal data-base. This is a simple form of implementing a global
+counter.
+
+~~~~~
+       read_and_increment_counter(Value) :-
+                get_value(counter, Value),
+                Value1 is Value+1,
+                set_value(counter, Value1).
+~~~~~
+This predicate is YAP specific.
+
+
+
+
+ 
+*/
   Yap_InitCPred("get_value", 2, p_value, TestPredFlag|SafePredFlag|SyncPredFlag);
+/** @pred  get_value(+ _A_,- _V_) 
+
+
+In YAP, atoms can be associated with constants. If one such
+association exists for atom  _A_, unify the second argument with the
+constant. Otherwise, unify  _V_ with `[]`.
+
+This predicate is YAP specific.
+
+ 
+*/
   Yap_InitCPred("$values", 3, p_values, SafePredFlag|SyncPredFlag);
   /* general purpose */
   Yap_InitCPred("$opdec", 4, p_opdec, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("=..", 2, p_univ, 0);
+/** @pred  _T_ =..  _L_ is iso 
+
+
+The list  _L_ is built with the functor and arguments of the term
+ _T_. If  _T_ is instantiated to a variable, then  _L_ must be
+instantiated either to a list whose head is an atom, or to a list
+consisting of just a number.
+
+ 
+*/
   Yap_InitCPred("$statistics_trail_max", 1, p_statistics_trail_max, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$statistics_heap_max", 1, p_statistics_heap_max, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$statistics_global_max", 1, p_statistics_global_max, SafePredFlag|SyncPredFlag);
@@ -1999,6 +1973,7 @@ Yap_InitCPreds(void)
   Yap_InitCPred("$statistics_db_size", 4, p_statistics_db_size, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$statistics_lu_db_size", 5, p_statistics_lu_db_size, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$argv", 1, p_argv, SafePredFlag);
+  Yap_InitCPred("$os_argv", 1, p_os_argv, SafePredFlag);
   Yap_InitCPred("$executable", 1, p_executable, SafePredFlag);
   Yap_InitCPred("$runtime", 2, p_runtime, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$cputime", 2, p_cputime, SafePredFlag|SyncPredFlag);
@@ -2008,6 +1983,16 @@ Yap_InitCPreds(void)
   Yap_InitCPred("$set_yap_flags", 2, p_set_yap_flags, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$system_mode", 1, p_system_mode, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("abort", 0, p_abort, SyncPredFlag);
+/** @pred  abort 
+
+
+Abandons the execution of the current goal and returns to top level. All
+break levels (see break/0 below) are terminated. It is mainly
+used during debugging or after a serious execution error, to return to
+the top-level.
+
+ 
+*/
   Yap_InitCPred("$break", 1, p_break, SafePredFlag);
 #ifdef BEAM
   Yap_InitCPred("@", 0, eager_split, SafePredFlag);
@@ -2026,10 +2011,6 @@ Yap_InitCPreds(void)
   /* Accessing and changing the flags for a predicate */
   Yap_InitCPred("$flags", 4, p_flags, SyncPredFlag);
   Yap_InitCPred("$set_flag", 4, p_set_flag, SyncPredFlag);
-  /* hiding and unhiding some predicates */
-  Yap_InitCPred("hide", 1, p_hide, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred("unhide", 1, p_unhide, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred("$hidden", 1, p_hidden, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$has_yap_or", 0, p_has_yap_or, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$has_eam", 0, p_has_eam, SafePredFlag|SyncPredFlag);
 #ifndef YAPOR

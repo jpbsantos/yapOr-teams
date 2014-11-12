@@ -1,4 +1,34 @@
-:- module(clpfd, [
+/**
+@defgroup Gecode_and_ClPbBFDbC Programming Finite Domain Constraints in YAP/Gecode
+@ingroup Gecode
+@{
+
+The gecode/clp(fd) interface is designed to use the GECODE functionality
+in a more CLP like style. It requires
+
+~~~~~{.prolog}
+:- use_module(library(gecode/clpfd)).
+~~~~~
+Several example programs are available with the distribution.
+
+Integer variables are declared as:
+
++ _V_ in  _A_.. _B_
+declares an integer variable  _V_ with range  _A_ to  _B_.
++ _Vs_ ins  _A_.. _B_
+declares a set of integer variabless  _Vs_ with range  _A_ to  _B_.
++ boolvar( _V_)
+declares a  boolean variable.
++ boolvars( _Vs_)
+declares a set of  boolean variable.
+
+
+Constraints supported are:
+
+*/
+
+
+:- module(gecode_clpfd, [
 		  op(100, yf, []),            
                   op(760, yfx, #<==>),
                   op(750, xfy, #==>),
@@ -20,8 +50,6 @@
                   op(700,  xf, #=<),
                   op(700,  xf, #=),
                   op(700,  xf, #\=),
-                  op(700, xfx, in),
-                  op(700, xfx, ins),
 		  op(500, yfx, '<=>'),
 		  op(500, yfx, '=>'),
                   op(450, xfx, ..), % should bind more tightly than \/
@@ -87,13 +115,135 @@
                   fd_dom/2 */
                  ]).
 
+/** @pred _X_ #<  _B_  is det
+reified implication 
+
+As an example. consider finding out the people who wanted to sit
+next to a friend and that are are actually sitting together:
+
+~~~~~{.prolog}
+preference_satisfied(X-Y, B) :-
+    abs(X - Y) #= 1 #<==> B.
+~~~~~
+Note that not all constraints may be reifiable.
+
+ 
+*/
+/** @pred _X_ #<  _Y_ is semidet
+smaller or equal
+
+Arguments to this constraint may be an arithmetic expression with <tt>+</tt>,
+<tt>-</tt>, <tt>\\*</tt>, integer division <tt>/</tt>, <tt>min</tt>, <tt>max</tt>, <tt>sum</tt>,
+<tt>count</tt>, and
+<tt>abs</tt>. Boolean variables support conjunction (/\), disjunction (\/),
+implication (=>), equivalence (<=>), and xor. The <tt>sum</tt> constraint allows  a two argument version using the
+`where` conditional, in Zinc style. 
+
+The send more money equation may be written as:
+
+~~~~~{.prolog}
+          1000*S + 100*E + 10*N + D +
+          1000*M + 100*O + 10*R + E #=
+10000*M + 1000*O + 100*N + 10*E + Y,
+~~~~~
+
+This example uses `where` to select from
+column  _I_ the elements that have value under  _M_:
+
+~~~~~{.prolog}
+OutFlow[I] #= sum(J in 1..N where D[J,I]<M, X[J,I])
+~~~~~
+
+The <tt>count</tt> constraint counts the number of elements that match a
+certain constant or variable (integer sets are not available).
+
+ 
+*/
+/** @pred _X_ #<==>  _B_  is det
+reified equivalence
+ 
+*/
+/** @pred _X_ #=  _Y_ is semidet
+equality
+ 
+*/
+/** @pred _X_ #=<  _Y_ is semidet
+smaller
+ 
+*/
+/** @pred _X_ #==>  _B_  is det
+Reified implication
+ 
+*/
+/** @pred _X_ #>  _Y_ is semidet
+larger
+ 
+*/
+/** @pred _X_ #>=  _Y_ is semidet
+larger or equal
+ 
+*/
+/** @pred _X_ #\=  _Y_ is semidet
+disequality
+ 
+*/
+/** @pred all_different( _Vs_    )
+
+Verifies whether all elements of a list are different.
+*/
+/** @pred labeling( _Opts_,  _Xs_)
+performs labeling, several variable and value selection options are
+available. The defaults are `min` and `min_step`.
+
+Variable selection options are as follows:
+
++ leftmost
+choose the first variable
++ min
+choose one of the variables with smallest minimum value
++ max
+choose one of the variables with greatest maximum value
++ ff
+choose one of the most constrained variables, that is, with the smallest
+domain.
+
+
+Given that we selected a variable, the values chosen for branching may
+be:
+
++ min_step
+smallest value
++ max_step
+largest value
++ bisect
+median
++ enum
+all value starting from the minimum.
+
+
+ 
+*/
+/** @pred scalar_product(+ _Cs_, + _Vs_, + _Rel_, ? _V_    )
+
+The product of constant  _Cs_ by  _Vs_ must be in relation
+ _Rel_ with  _V_ .
+
+ 
+*/
+
 :- use_module(library(gecode)).
 :- use_module(library(maplist)).
-:- reexport(library(matrix), [(<==)/2, foreach/2, foreach/4, of/2]).
+
+:- reexport(library(matrix), [(<==)/2, op(800, xfx, '<=='),
+	    op(700, xfx, in),
+	    op(700, xfx, ins),
+            op(450, xfx, ..), % should bind more tightly than \/
+	    op(710, xfx, of),
+	    foreach/2, foreach/4, of/2]).
 
 % build array of constraints
 %
-matrix:array_extension(_.._ , clpfd:build).
+matrix:array_extension(_.._ , gecode_clpfd:build).
 
 build( I..J, _, Size, L) :-
 	length( L, Size ),
@@ -193,22 +343,43 @@ process_constraints(B, B, _Env).
 	get_home(Env),
 	check(A, NA),
 	post( rel(NA,  (#=)), Env, _).
+/** @pred _X_ #= is det
+all elements of  _X_  must take the same value
+ 
+*/
 ( A #\= ) :-
 	get_home(Env),
 	check(A, NA),
 	post( rel(NA,  (#\=)), Env, _).
+/** @pred _X_ #<  is det
+elements of  _X_  must be decreasing or equal
+
+ 
+*/
 ( A #< ) :-
 	get_home(Env),
 	check(A, NA),
 	post( rel(NA,  (#<)), Env, _).
+/** @pred _X_ #>  is det
+elements of  _X_  must be increasing
+ 
+*/
 ( A #> ) :-
 	get_home(Env),
 	check(A, NA),
 	post( rel(NA,  (#>)), Env, _).
+/** @pred _X_ #=<  is det
+elements of  _X_  must be decreasing
+ 
+*/
 ( A #=< ) :-
 	get_home(Env),
 	check(A, NA),
 	post( rel(NA,  (#=<) ), Env, _).
+/** @pred _X_ #>=  is det
+elements of  _X_  must be increasinga or equal
+ 
+*/
 ( A #>= ) :-
 	get_home(Env),
 	check(A, NA),
@@ -218,7 +389,7 @@ sum( L, Op, V) :-
 	check(L, NL),
 	check(V, NV),
 	post( rel(sum(NL), Op, NV), Env, _).
-( A #<==> VBool) :-
+( ( A #<==> VBool )) :-
 	get_home(Space-Map),
 	check(A, NA),
 	check(VBool, NVBool),
@@ -1035,7 +1206,7 @@ in_c(C, A, Space-Map) :-
 in_c_l(Env, V, IV) :-
 	in_c(V, IV, Env).
 
-user:term_expansion( ( H :- B), (H :- (clpfd:init_gecode(Space, Me), NB, clpfd:close_gecode(Space, Vs, Me)) ) ) :-
+user:term_expansion( ( H :- B), (H :- (gecode_clpfd:init_gecode(Space, Me), NB, gecode_clpfd:close_gecode(Space, Vs, Me)) ) ) :-
 	process_constraints(B, NB, Env),
 	term_variables(H, Vs),
 	nonvar( Env ), !,
@@ -1080,7 +1251,7 @@ add_el(_G0, _El, Cs-Vs, Cs-Vs).
 attr_unify_hook(_, _) :-
 	b_getval(gecode_done, true), !.
 attr_unify_hook(v(IV1,_,_), Y) :-
-        (   get_attr(Y, clpfd, v(IV2,_,_))
+        (   get_attr(Y, gecode_clpfd, v(IV2,_,_))
         ->
 	    nb_getval(gecode_space, Space-_),
 	    ( IV1 == IV2 -> true ;
@@ -1095,11 +1266,11 @@ attr_unify_hook(v(IV1,_,_), Y) :-
 %       Translate attributes from this module to residual goals
 
 attribute_goals(X) -->
-        { get_attr(X, clpfd, v(_,A,B)) },
+        { get_attr(X, gecode_clpfd, v(_,A,B)) },
         [X in A..B].
 
 m(X, Y, A, B, _Map) :-
-	put_attr(X, clpfd, v(Y, A, B)).
+	put_attr(X, gecode_clpfd, v(Y, A, B)).
 /*
 m(NV, OV, NA, NB, Vs) :-
 	var(Vs), !,
@@ -1112,7 +1283,7 @@ lm(A, B, Map, X, Y) :-
 	m(X, Y, A, B, Map).
 
 l(V, IV, _) :-
-	get_attr(V, clpfd, v(IV, _, _)).
+	get_attr(V, gecode_clpfd, v(IV, _, _)).
 /*
 l(_NV, _OV, Vs) :-
 	var(Vs), !,
@@ -1127,7 +1298,7 @@ ll(Map, X, Y) :-
 	l(X, Y, Map).
 
 l(V, IV, A, B, _) :-
-	get_attr(V, clpfd, v(IV, A, B)).
+	get_attr(V, gecode_clpfd, v(IV, A, B)).
 
 /*
 l(_NV, _OV, _, _, Vs) :-
@@ -1141,3 +1312,6 @@ l(NV, OV, A, B, [_|Vs]) :-
 
 is_one(1).
 
+/**
+@}
+*/

@@ -15,6 +15,37 @@
 *									 *
 *************************************************************************/
 
+:- system_module( '$_directives', [user_defined_directive/2], ['$all_directives'/1,
+        '$exec_directives'/5]).
+
+:- use_system_module( '$_boot', ['$command'/4,
+        '$system_catch'/4]).
+
+:- use_system_module( '$_consult', ['$elif'/2,
+        '$else'/1,
+        '$endif'/1,
+        '$if'/2,
+        '$include'/2,
+        '$initialization'/1,
+        '$initialization'/2,
+        '$load_files'/3,
+        '$require'/2,
+        '$set_encoding'/1,
+        '$use_module'/3]).
+
+:- use_system_module( '$_modules', ['$meta_predicate'/2,
+        '$module'/3,
+        '$module'/4,
+        '$module_transparent'/2]).
+
+:- use_system_module( '$_preddecls', ['$discontiguous'/2,
+        '$dynamic'/2]).
+
+:- use_system_module( '$_preds', ['$noprofile'/2,
+        '$public'/2]).
+
+:- use_system_module( '$_threads', ['$thread_local'/2]).
+
 '$all_directives'(_:G1) :- !,
 	'$all_directives'(G1).
 '$all_directives'((G1,G2)) :- !,
@@ -62,11 +93,17 @@
 '$directive'(use_module(_,_,_)).
 '$directive'(wait(_)).
 
-'$exec_directives'((G1,G2), Mode, M, VL, Pos) :- !,
-	'$exec_directives'(G1, Mode, M, VL, Pos),
-	'$exec_directives'(G2, Mode, M, VL, Pos).
+'$exec_directives'((G1,G2), Mode, M, VL, Pos) :- 
+    !,
+    '$exec_directives'(G1, Mode, M, VL, Pos),
+    '$exec_directives'(G2, Mode, M, VL, Pos).
 '$exec_directives'(G, Mode, M, VL, Pos) :-
-	'$exec_directive'(G, Mode, M, VL, Pos).
+    '$save_directive'(G, Mode, M, VL, Pos),
+    '$exec_directive'(G, Mode, M, VL, Pos).
+
+'$save_directive'(G, Mode, M, VL, Pos) :-
+    prolog_load_context(file, FileName), !,
+    recordz('$directive', directive(FileName,M:G, Mode, VL, Pos),_).
 
 '$exec_directive'(multifile(D), _, M, _, _) :-
 	'$system_catch'('$multifile'(D, M), M,
@@ -74,6 +111,14 @@
 	      user:'$LoopError'(Error, top)).
 '$exec_directive'(discontiguous(D), _, M, _, _) :-
 	'$discontiguous'(D,M).
+
+/** @pred initialization
+
+Execute the goals defined by initialization/1. Only the first answer is
+considered.
+
+ 
+*/
 '$exec_directive'(initialization(D), _, M, _, _) :-
 	'$initialization'(M:D).
 '$exec_directive'(initialization(D,OPT), _, M, _, _) :-
@@ -86,6 +131,7 @@
         '$set_encoding'(Enc).
 '$exec_directive'(include(F), Status, _, _, _) :-
 	'$include'(F, Status).
+% don't declare modules into Prolog Module
 '$exec_directive'(module(N,P), Status, _, _, _) :-
 	'$module'(Status,N,P).
 '$exec_directive'(module(N,P,Op), Status, _, _, _) :-
@@ -120,13 +166,13 @@
 '$exec_directive'(consult(Fs), _, M, _, _) :-
 	'$load_files'(M:Fs, [consult(consult)], consult(Fs)).
 '$exec_directive'(use_module(F), _, M, _, _) :-
-	'$load_files'(M:F, [if(not_loaded),must_be_module(true)],use_module(F)).
+	use_module(M:F).
 '$exec_directive'(reexport(F), _, M, _, _) :-
 	'$load_files'(M:F, [if(not_loaded), silent(true), reexport(true),must_be_module(true)], reexport(F)).
 '$exec_directive'(reexport(F,Spec), _, M, _, _) :-
 	'$load_files'(M:F, [if(changed), silent(true), imports(Spec), reexport(true),must_be_module(true)], reexport(F, Spec)).
-'$exec_directive'(use_module(F,Is), _, M, _, _) :-
-	'$load_files'(M:F, [if(not_loaded),imports(Is),must_be_module(true)],use_module(F,Is)).
+'$exec_directive'(use_module(F, Is), _, M, _, _) :-
+	use_module(M:F, Is).
 '$exec_directive'(use_module(Mod,F,Is), _, _, _, _) :-
 	'$use_module'(Mod,F,Is).
 '$exec_directive'(block(BlockSpec), _, _, _, _) :-
