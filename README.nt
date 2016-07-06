@@ -6,5 +6,5 @@ In order to run YapOr with teams MPI should be installed (we recommend OpenMPI) 
   - make depend
   - make
   - make install
-- at this point yap its compiled so we may run the comand ./yap -l name_of_the_example_to_be_run.pl in order to execute yap with one of the 10 benchmarks available. We assume that the directory of the benchmarks is on the $PATH variable, a simple way to do this is to copy the benchmark files to the directory where the yap binary is located.    
-- once the file is loaded, if you want to measure the time elapsed we should execute the time_query on the other hand if we want to see the answers we run the debug_query.
+- at this point yap its compiled so we may run the comand ./yap -l name_of_the_example_to_be_run.pl in order to execute yap with one of the 10 benchmarks available. We assume that the benchmarks directory is included in the $PATH environment variable, a simple way to do this is to copy the benchmark files to the directory where the yap binary is located.    
+- once the file is loaded, for measuring the elapsed time by the benchmark we execute the time_query on the other hand if we want to see the answers returned by the execution we run the debug_query.
