@@ -59,9 +59,13 @@ releases.
 ** ------------------------- */
 
 typedef struct or_frame {
+  int ___OWNER_LOCK___;
   lockvar lock;
   yamop *alternative;
   volatile bitmap members;
+#ifdef YAPOR_SPLIT
+  int  or_so;
+#endif
 #ifdef YAPOR_THREADS
   Int node_offset;
 #else
@@ -90,6 +94,12 @@ typedef struct or_frame {
 #endif /* TABLING */
   struct or_frame *next;
 } *or_fr_ptr;
+
+#define OrFr_owner(X)              ((X)->___OWNER_LOCK___)
+
+#ifdef YAPOR_SPLIT
+  #define OrFr_so(X)              ((X)->or_so)
+#endif
 
 #define OrFr_lock(X)              ((X)->lock)
 #define OrFr_alternative(X)       ((X)->alternative)

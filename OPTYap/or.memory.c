@@ -220,6 +220,7 @@ void Yap_unmap_yapor_memory (void) {
 
   INFORMATION_MESSAGE("Worker %d exiting...", worker_id);
 #ifdef YAPOR_TEAMS
+  //printf("%d\n",GLOBAL_worker_pid_counter);
   for (i = 1; i < GLOBAL_worker_pid_counter; i++){
       //printf("%d\n",GLOBAL_worker_pid(i));
       if (kill(GLOBAL_worker_pid(i), SIGKILL) != 0)

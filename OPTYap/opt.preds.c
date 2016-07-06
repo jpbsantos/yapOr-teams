@@ -60,6 +60,9 @@ static Int p_get_results(  USES_REGS1 );
 static Int p_parallel_barrier(  USES_REGS1 ); 
 static Int p_results_barrier(  USES_REGS1 ); 
 #ifdef YAPOR_MPI
+static Int p_mpi_prompt(  USES_REGS1 );
+static Int p_debug_joao(  USES_REGS1 ); 
+static Int p_mpi_solve_bug(  USES_REGS1 ); 
 static Int p_mpi_parallel_barrier(  USES_REGS1 ); 
 static Int p_mpi_parallel_new_answer( USES_REGS1 );
 static Int p_mpi_get_results(  USES_REGS1 );
@@ -249,15 +252,18 @@ predicates. The predicates remain as tabled predicates.
 #endif /* YAPOR */
 #ifdef YAPOR_TEAMS
   Yap_InitCPred("testing", 1, p_testing, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred("mpi_prompt", 0, p_mpi_prompt, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_parallel_barrier", 1, p_parallel_barrier, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_mpi_parallel_barrier", 1, p_mpi_parallel_barrier, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_results_barrier", 1, p_results_barrier, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_create_team", 2, p_create_team, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_get_results", 2, p_get_results, SafePredFlag|SyncPredFlag);
-  Yap_InitCPred("$c_create_comm", 3, p_create_comm, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred("$c_create_comm", 4, p_create_comm, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_run_parallel_goal", 3, p_run_goal, SafePredFlag|SyncPredFlag);
 #ifdef YAPOR_MPI
+  Yap_InitCPred("$c_mpi_solve_bug", 2, p_mpi_solve_bug, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_mpi_parallel_new_answer", 1, p_mpi_parallel_new_answer, SafePredFlag|SyncPredFlag);
+  Yap_InitCPred("debug_joao", 1, p_debug_joao, SafePredFlag|SyncPredFlag);
   Yap_InitCPred("$c_mpi_get_results", 2, p_mpi_get_results, SafePredFlag|SyncPredFlag);
 #endif
 #endif
@@ -732,11 +738,46 @@ static Int p_mpi_parallel_barrier( USES_REGS1 ) {
 
   int a;
 
-  printf("*************_________________BARRIER __________ BARRIER _______%d_____ BARRIER ______________ BARRIER_______________************* %p\n",comm_id,R_COMM_mpi_comm(comm_id));
+  //printf("*************_________________BARRIER __________ BARRIER _______%d_____ BARRIER ______________ BARRIER_______________************* %p\n",comm_id,R_COMM_mpi_comm(comm_id));
 
   MPI_Recv(&a,1,MPI_INT,0,21,R_COMM_mpi_comm(comm_id),MPI_STATUS_IGNORE);
 
-  printf("*************_________________BARRIER __________ BARRIER ____________ BARRIER ______________ BARRIER_______________*************\n");
+  //printf("*************_________________BARRIER __________ BARRIER ____________ BARRIER ______________ BARRIER_______________*************\n");
+
+  return(TRUE);
+
+}
+
+
+static Int p_mpi_solve_bug( USES_REGS1 ) {
+//printf("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&SOLVE DEBUG_JOAO\n");
+  int tid = IntOfTerm(Deref(ARG1));   
+
+  Term term_consult = Deref(ARG2);
+
+  
+  char *buff = malloc(500*sizeof(char));
+
+
+
+
+  YAP_WriteBuffer(term_consult,buff, 500, 0);
+ 
+  MPI_Bcast(buff,500,MPI_CHAR,MPI_ROOT,R_COMM_mpi_comm(tid));
+
+
+  return(TRUE);
+
+}
+
+
+static Int p_debug_joao( USES_REGS1 ) {
+  int comm_id = IntOfTerm(Deref(ARG1));   
+
+  
+  printf("1&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&DEBUG_JOAOaaa %p   %p\n",B,B->cp_ap);
+  if(comm_id)
+  sleep(1000);
 
   return(TRUE);
 
@@ -829,7 +870,8 @@ static Int p_run_goal( USES_REGS1 ) {
   Term term_goal = Deref(ARG1);
   size_t size;
   char *goal = malloc(300*sizeof(char));
-  term2string( &goal, &size,term_goal );
+  //term2string( &goal, &size,term_goal );
+  YAP_WriteBuffer(term_goal,goal, 300, 0);
   MPI_Send(goal,300,MPI_CHAR,0,0,R_COMM_mpi_comm(tid));
 
 
@@ -868,15 +910,16 @@ string2term(char** ptr, size_t *size) {
 
 static Int p_create_comm( USES_REGS1 ) {
 
-printf(" __________________________________________________________________________ \n"); 
+  //printf(" __________________________________________________________________________ \n"); 
 
 
-//sleep(100);
+  //sleep(100);
 
   int mpi = 1;
   Term list = Deref(ARG1);
+  Term hostlist = Deref(ARG2);
   int tid , i;
-  int number_teams = IntOfTerm(Deref(ARG2));
+  int number_teams = IntOfTerm(Deref(ARG3));
   int comm = GLOBAL_counter_comms;
   MPI_Comm everyone;
   int rank;
@@ -898,73 +941,107 @@ printf(" _______________________________________________________________________
   //printf("----------   %s  --------------- %s\n",goal,list); 
 
 
-if(mpi){
-  int workers_per_team[100];
-  //printf("----------   %s  ---------------\n",goal); 
-  printf("INIT SPAWN WORKER MASTER %d\n",getpid());
-  MPI_Comm_spawn("yap", MPI_ARGV_NULL, number_teams, MPI_INFO_NULL, 0, MPI_COMM_SELF, &everyone, MPI_ERRCODES_IGNORE); 
-  R_COMM_mpi_comm(comm) = everyone;
-  R_COMM_number_teams(comm) = number_teams;
-  printf("INIT SPAWN WORKER MASTER %d %d  %p\n",getpid(),number_teams,R_COMM_mpi_comm(comm));
+  if(mpi){
+    int workers_per_team[100];
+    //printf("----------   %d  ---------------\n",number_teams); 
 
+    MPI_Info infos[32];
+    char *cmds[32];
+    char *argvs[32];
+    int n_workers[32]; 
+    char host[300];
+    char *argv[] = {"-s", "99999","-t","99999","-h","99999", NULL};
+
+    for(i = 0; i < number_teams; i++){
+      //      printf("%d\n",i);
+      workers_per_team[i] = IntOfTerm(HeadOfTerm(list));
+      list = TailOfTerm(list);
+
+    
+      YAP_WriteBuffer(HeadOfTerm(hostlist),host, 300, 0);
+      hostlist = TailOfTerm(hostlist);
+      //      printf("->>>>>>>> %s\n",host);
+
+      MPI_Info_create(&infos[i]);
+      MPI_Info_set(infos[i],"add-host",host);
+      MPI_Info_set(infos[i],"host",host);
+      cmds[i] = "./yap";
+      // cmds[i] = "/home/jsantos/test_mpi/worker";
+      argvs[i] = argv;
+      n_workers[i] = 1;
+    }
+
+    //printf("ANTES\n"); 
+    MPI_Comm_spawn_multiple(number_teams,cmds, argvs, n_workers, infos, 0, MPI_COMM_SELF, &everyone, MPI_ERRCODES_IGNORE);
+
+    //printf("DEPOIS\n"); 
+    R_COMM_mpi_comm(comm) = everyone;
+    R_COMM_number_teams(comm) = number_teams;
+    //    R_COMM_query_has_answers(comm) = 0;
+    //R_COMM_query_has_finished(comm) = 0;
+    //printf("INIT SPAWN WORKER MASTER %d %d  %p\n",getpid(),number_teams,R_COMM_mpi_comm(comm));
+
+
+    /*
     for(i = 0; i < number_teams; i ++){
     workers_per_team[i] = IntOfTerm(HeadOfTerm(list));
     list = TailOfTerm(list);
   }
+    */
 
 
-  MPI_Bcast(&number_teams, 1, MPI_INT,  MPI_ROOT , everyone);
-  MPI_Bcast(workers_per_team,number_teams,MPI_INT,MPI_ROOT,everyone);
-  //exit(0);
-  //MPI_Send(goal,300,MPI_CHAR,0,0,everyone);
-  MPI_Comm_rank(everyone, &rank); 
-  printf(" EEEEEE  %d EEEEE  %d\n",rank,getpid());
+    MPI_Bcast(&number_teams, 1, MPI_INT,  MPI_ROOT , everyone);
+    MPI_Bcast(workers_per_team,number_teams,MPI_INT,MPI_ROOT,everyone);
+    //exit(0);
+    //MPI_Send(goal,300,MPI_CHAR,0,0,everyone);
+    MPI_Comm_rank(everyone, &rank); 
+    //printf(" EEEEEE  %d EEEEE  %d\n",rank,getpid());
   } 
-else{
-  GLOBAL_counter_comms ++;
-  BITMAP_clear(R_COMM_bm_present_teams(comm));
-  BITMAP_clear(R_COMM_bm_idle_teams(comm));
+  else{
+    GLOBAL_counter_comms ++;
+    BITMAP_clear(R_COMM_bm_present_teams(comm));
+    BITMAP_clear(R_COMM_bm_idle_teams(comm));
 
-  //printf("number teams %d\n",number_teams);   
+    //printf("number teams %d\n",number_teams);   
 
-  for(i = 0; i < number_teams; i ++){
-  BITMAP_insert(R_COMM_bm_present_teams(comm),i);
-  }
-  BITMAP_copy(R_COMM_bm_finished_teams(comm),R_COMM_bm_present_teams(comm));	
+    for(i = 0; i < number_teams; i ++){
+      BITMAP_insert(R_COMM_bm_present_teams(comm),i);
+    }
+    BITMAP_copy(R_COMM_bm_finished_teams(comm),R_COMM_bm_present_teams(comm));
 
-  INIT_LOCK(R_COMM_locks_bm_running_teams(comm));
-  INIT_LOCK(R_COMM_locks_bm_present_teams(comm));      
-  INIT_LOCK(R_COMM_locks_bm_finished_teams(comm)); 
-  INIT_LOCK(R_COMM_locks_bm_idle_teams(comm)); 
+    INIT_LOCK(R_COMM_locks_bm_running_teams(comm));
+    INIT_LOCK(R_COMM_locks_bm_present_teams(comm));      
+    INIT_LOCK(R_COMM_locks_bm_finished_teams(comm)); 
+    INIT_LOCK(R_COMM_locks_bm_idle_teams(comm)); 
  
 
-  for(i = 0; i < number_teams; i ++){
-    int n_workers_team = IntOfTerm(HeadOfTerm(list));
+    for(i = 0; i < number_teams; i ++){
+      int n_workers_team = IntOfTerm(HeadOfTerm(list));
 
-    tid = ++GLOBAL_counter_teams;
+      tid = ++GLOBAL_counter_teams;
 
-    Yap_init_yapor_teams_workers(n_workers_team,tid,comm,i);
+      Yap_init_yapor_teams_workers(n_workers_team,tid,comm,i);
 
-    //BITMAP_insert(R_COMM_bm_present_teams(comm),i);
-    R_COMM_translation_array(comm,i) = tid;
-    GLOBAL_comm_rank(tid) = i; 
-//    printf(" __________________________________________________________________________ %d  --->  %d \n",i,tid); 
-    GLOBAL_comm_number(tid) = comm;
-    list = TailOfTerm(list);
-  }
+      //BITMAP_insert(R_COMM_bm_present_teams(comm),i);
+      R_COMM_translation_array(comm,i) = tid;
+      GLOBAL_comm_rank(tid) = i; 
+      //    printf(" __________________________________________________________________________ %d  --->  %d \n",i,tid); 
+      GLOBAL_comm_number(tid) = comm;
+      list = TailOfTerm(list);
+    }
   
 
 
-  R_COMM_number_teams(comm) = number_teams;    
-  //BITMAP_copy(R_COMM_bm_finished_teams(comm),R_COMM_bm_present_teams(comm));	
-  R_COMM_finished(comm) = 0; 
-	 
-}
+    R_COMM_number_teams(comm) = number_teams;    
+    //BITMAP_copy(R_COMM_bm_finished_teams(comm),R_COMM_bm_present_teams(comm));
+    R_COMM_finished(comm) = 0; 
+     
+  }
   
 
   Term comm2 = MkIntTerm(comm);
-  Yap_unify(ARG3, comm2);
-  //Yap_unify(ARG3, out);	
+  Yap_unify(ARG4, comm2);
+  //Yap_unify(ARG3, out);
 
   return(TRUE);
 }
@@ -983,6 +1060,7 @@ static Int p_results_barrier( USES_REGS1 ) {
   return (TRUE);
 
 }
+
 
 
 static Int p_get_results( USES_REGS1 ) {
@@ -1022,16 +1100,16 @@ static Int p_get_results( USES_REGS1 ) {
 #ifdef YAPOR_MPI
 static Int p_mpi_get_results( USES_REGS1 ) {
   int id = IntOfTerm(Deref(ARG1));
-  printf("-----------------------------------  %d ---------------------------------\n",id);  
+  //printf("-----------------------------------  %d ---------------------------------\n",id);  
   int a = 1;
   int recv_msg;
-  char buf [5000] [256];
-  int i, j;
+  char buf [5000] [500];
+  int i, j, flag=0;
   Term t =  TermNil;
   Term aux = NULL;
   MPI_Recv( &recv_msg, 1, MPI_INT, MPI_ANY_SOURCE, 34, R_COMM_mpi_comm(id), MPI_STATUS_IGNORE);
 
-  printf("MENSAGEM -----------------------------  %d   %d---------------------------------  \n",recv_msg,R_COMM_number_teams(id));
+  //printf("MENSAGEM -----------------------------  %d   %d---------------------------------  \n",recv_msg,R_COMM_number_teams(id));
 
   //sleep(1000);
 
@@ -1042,11 +1120,16 @@ static Int p_mpi_get_results( USES_REGS1 ) {
      MPI_Send(&a, 1, MPI_INT, i, 34, R_COMM_mpi_comm(id));
 
   for(i=0; i< R_COMM_number_teams(id); i++){
-     printf("\n \n RESULTADOS %d\n \n",i);
-     MPI_Recv( &buf, 5000*256, MPI_CHAR, i, 34, R_COMM_mpi_comm(id), MPI_STATUS_IGNORE);
+     flag = 0;
+     while(flag == 0){
+       //     printf("\n \n RESULTADOS %d\n \n",i);
+     MPI_Recv( &buf, 5000*500, MPI_CHAR, i, 34, R_COMM_mpi_comm(id), MPI_STATUS_IGNORE);
      for (j=0;j<5000;j++){
-      if(buf[j][0] == '\0')
+      if(buf[j][0] == '\0'){
+	//printf("AQUI! 000  %d\n",j);
+         flag = 1;
          break;
+      }
       //printf("--- %s\n",buf[j]);
       int l;
      /* for(l=0;l<256;l++){
@@ -1058,16 +1141,27 @@ static Int p_mpi_get_results( USES_REGS1 ) {
       //Yap_DebugPlWrite(aux);
       t = MkPairTerm(aux, t);
      }
-     printf("\n \n FIM FIM FIM  \n \n");
+     //printf("\n \n FIM FIM FIM  \n \n");
       //Yap_DebugPlWrite(t);
+   }
   }
 
-  printf("\n \n ANTES ANTES ANTES \n \n");
+  //printf("\n \n ANTES ANTES ANTES \n \n");
   //Yap_DebugPlWrite(t);
-  printf("\n \n FIM FIM FIM  \n \n");
+  //printf("\n \n FIM FIM FIM  \n \n");
   Yap_unify(ARG2, t);
   return (TRUE);
 
+}
+
+static Int p_mpi_prompt( USES_REGS1 ) {
+   MPI_Comm parent; 
+
+   MPI_Comm_get_parent(&parent); 
+   if (parent == MPI_COMM_NULL)
+    return(TRUE);
+   else
+    return(FALSE);
 }
 #endif 
 
@@ -1106,6 +1200,8 @@ static Int p_parallel_mode( USES_REGS1 ) {
 
 
 
+
+
 static Int p_testing( USES_REGS1 ) {
   Term t;
   t = Deref(ARG1);
@@ -1118,7 +1214,7 @@ static Int p_testing( USES_REGS1 ) {
 
 
 static Int p_yapor_start( USES_REGS1 ) {
-  printf("START START START START (%d,%d)  %d\n",team_id,worker_id,comm_rank);
+ // printf("START START START START (%d,%d)  %d\n",team_id,worker_id,comm_rank);
 #ifdef TIMESTAMP_CHECK
   GLOBAL_timestamp = 0;
 #endif /* TIMESTAMP_CHECK */
@@ -1133,17 +1229,13 @@ static Int p_yapor_start( USES_REGS1 ) {
   GLOBAL_execution_time = current_time();
   //BITMAP_clear(GLOBAL_bm_finished_workers);
 #ifdef YAPOR_TEAMS
-  BITMAP_clear(GLOBAL_bm_free_workers);
-  LOCK(GLOBAL_lock_free_workers);
-  BITMAP_insert(GLOBAL_bm_free_workers, worker_id);
-  UNLOCK(GLOBAL_lock_free_workers);
+  //printf("START START START START (%d,%d) %d\n",team_id,worker_id,GLOBAL_bm_free_workers);
   //BITMAP_clear(R_COMM_bm_finished_teams(GLOBAL_comm_number(team_id)));
-  BITMAP_clear(COMM_bm_finished_teams);
-  //printf("START START START START (%d,%d)\n",team_id,worker_id);
 #ifdef YAPOR_MPI
   //MPI_Barrier(MPI_COMM_WORLD);
   int results = IntOfTerm(Deref(ARG1)); 
-  printf("START START START START (%d,%d)  res = %d\n",team_id,worker_id,results);
+  //printf("START START START START (%d,%d)  res = %d\n",team_id,worker_id,results);
+  //GLOBAL_mpi_load(comm_rank) = 1;
   int cp_tr[3];
   cp_tr[0] = GLOBAL_root_cp;
   cp_tr[1] = GLOBAL_root_cp->cp_tr;
@@ -1151,8 +1243,15 @@ static Int p_yapor_start( USES_REGS1 ) {
   MPI_Bcast(&cp_tr, 3, MPI_INT, 0, MPI_COMM_WORLD);
 #endif
   PUT_OUT_ROOT_NODE(worker_id);
+#ifdef YAPOR_TEAMS
+  BITMAP_clear(GLOBAL_bm_free_workers);
+  BITMAP_insert(GLOBAL_bm_free_workers, worker_id);
+  UNLOCK(GLOBAL_lock_free_workers);
+  //BITMAP_clear(R_COMM_bm_finished_teams(GLOBAL_comm_number(team_id)));
+  BITMAP_clear(COMM_bm_finished_teams);
 #endif
-  printf("XXXXX START START START START (%d,%d) %p\n",team_id,worker_id,cp_tr[2]);
+#endif
+  //printf("XXXXX START START START START (%d,%d) %p\n",team_id,worker_id,cp_tr[2]);
   return (TRUE);
 }
 
@@ -1204,9 +1303,10 @@ static Int p_mpi_parallel_new_answer( USES_REGS1 ) {
   or_fr_ptr leftmost_or_fr;
 
 
- //printf("(%d,%d) NEW ANSWER %d   |%p| |%p|  %d\n",comm_rank,worker_id,getpid(),B,B->cp_ap,IntOfTerm(ASP[0]));
+ //printf("(%d,%d) NEW ANSWER \n",comm_rank,worker_id);
 
-  Term db_ref = Yap_StoreTermInDB(Deref(ARG1),10);
+  Term db_ref = Yap_StoreTermInDB(Deref(ARG1),1);
+  //printf(" %p -- %d\n",db_ref,getpid());
  
   ALLOC_QG_ANSWER_FRAME(actual_answer);
   AnsFr_answer(actual_answer) = db_ref;
@@ -1726,7 +1826,7 @@ void Yap_init_yapor_teams_workers(int n_workers, int my_team_id, int comm, int r
       CurrentModule = USER_MODULE;
       GLOBAL_parallel_mode = PARALLEL_MODE_ON;
       P = GETWORK_FIRST_TIME;
-      Yap_exec_absmi(FALSE);
+      Yap_exec_absmi(FALSE, YAP_EXEC_ABSMI);
       Yap_Error(INTERNAL_ERROR, TermNil, "abstract machine unexpected exit (YAP_Init)");
 }
 
@@ -1789,6 +1889,21 @@ void Yap_init_mpi_yapor_teams_workers(int n_workers, int my_team_id, int comm, i
   GLOBAL_team_area_pointer(my_team_id) = GLOBAL_team_area_pointer(my_team_id+1);
   GLOBAL_start_area = GLOBAL_team_area_pointer(my_team_id);
 
+  //printf(" -- %d --  %d \n",GLOBAL_mpi_n_arenas,n_workers);
+
+  //printf(" START AREA %p \n",GLOBAL_start_area);
+for(i=0; i< GLOBAL_mpi_n_arenas; i++){
+  GLOBAL_mpi_delegate_arena_start(i) = (size_t) GLOBAL_start_area + (size_t) ((n_workers)* Yap_worker_area_size) + (size_t) (i* Yap_worker_area_size);
+  //printf("%d -  **  %p **\n",n_workers+i,GLOBAL_mpi_delegate_arena_start(i));
+
+  //printf("\n\n%d - %d --  **  %p     %p **\n",getpid(),n_workers+i,GLOBAL_start_area,LOCAL_GlobalBase);
+  //printf("%d - %d --  **  %p **\n",getpid(),n_workers+i,GLOBAL_mpi_delegate_arena_start(i));
+  GLOBAL_mpi_delegate_is_free(i) =  1;             
+  GLOBAL_mpi_delegate_worker_q(i) = MAX_WORKERS;                 
+  GLOBAL_mpi_delegate_messages(i) = 0;                 
+  GLOBAL_mpi_delegate_len(i) = 0;   
+}        
+
   //printf("%d A (%d,%d) ---------------    %p  %p  %p\n",getpid(), team_id, worker_id,LOCAL, REMOTE(worker_id), Yap_local+1);
   //GLOBAL_team_area_pointer(my_team_id + 1) = GLOBAL_team_area_pointer(my_team_id) + (n_workers * Yap_worker_area_size);
   //GLOBAL_local_id(my_team_id + 1) = GLOBAL_local_id(my_team_id) + n_workers; 
@@ -1797,8 +1912,8 @@ void Yap_init_mpi_yapor_teams_workers(int n_workers, int my_team_id, int comm, i
 
 
       LOCK(GLOBAL_lock_worker_pid); 
-      GLOBAL_worker_pid(GLOBAL_worker_pid_counter)=getpid();
-      GLOBAL_worker_pid_counter++;
+      //GLOBAL_worker_pid(GLOBAL_worker_pid_counter)=getpid();
+      //GLOBAL_worker_pid_counter++;
       //printf("%d ÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇÇçç %d %d\n",GLOBAL_worker_pid_counter,getpid(),GLOBAL_worker_pid(GLOBAL_worker_pid_counter-1));
       UNLOCK(GLOBAL_lock_worker_pid); 
       worker_id = 0;
@@ -1878,8 +1993,8 @@ void Yap_init_mpi_yapor_teams_workers(int n_workers, int my_team_id, int comm, i
       CurrentModule = USER_MODULE;
       GLOBAL_parallel_mode = PARALLEL_MODE_ON;
       P = GETWORK_FIRST_TIME;
-      printf("%d                                                          ENDEREÇO CODIGO %p\n",getpid(), P);
-      Yap_exec_absmi(FALSE);
+      //printf("%d                                                          ENDEREÇO CODIGO %p\n",getpid(), P);
+      Yap_exec_absmi(FALSE, YAP_EXEC_ABSMI);
       Yap_Error(INTERNAL_ERROR, TermNil, "abstract machine unexpected exit (YAP_Init)");
       
 }
@@ -1890,7 +2005,13 @@ void Yapor_teams_remap_team_memory() {
   int fd_mapfile;
   long remap_offset = (ADDR) (GLOBAL_team_area_pointer(team_id) + (worker_id * Yap_worker_area_size)) - (ADDR) Yap_local;
 
-  printf("%d                                                          OFFSET %p   |%p  %p|\n",getpid(),remap_offset,GLOBAL_team_area_pointer(team_id),LOCAL_GlobalBase+Yap_worker_area_size);
+  
+  //  printf("%d $$$%d                  %p\n",getpid(),worker_id,(GLOBAL_team_area_pointer(team_id) + (worker_id * Yap_worker_area_size)));
+
+  //printf("%d TEAM AREA %p    --- %p \n",team_id,GLOBAL_team_area_pointer(team_id),GLOBAL_start_area);
+
+  //printf("$$$%d                  %p   %d %p\n",worker_id,(GLOBAL_team_area_pointer(team_id) + (worker_id * Yap_worker_area_size)),team_id,GLOBAL_team_area_pointer(team_id));
+  //printf("%d                                                          OFFSET %p   |%p  %p|\n",getpid(),remap_offset,GLOBAL_team_area_pointer(team_id),LOCAL_GlobalBase+Yap_worker_area_size);
   if ((fd_mapfile = open(GLOBAL_mapfile_path, O_RDWR)) < 0)
     Yap_Error(FATAL_ERROR, TermNil, "open error (Yap_remap_yapor_memory)");
   if (munmap(remap_addr, (size_t)(Yap_worker_area_size)) == -1)

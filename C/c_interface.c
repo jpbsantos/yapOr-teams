@@ -2821,12 +2821,16 @@ YAP_WriteBuffer(Term t, char *buf, size_t sze, int flags)
   char *b;
 
   BACKUP_MACHINE_REGS();
+  //printf("1,1--%d    %p    %p   \n",getpid(),ASP,HR);
   if ((b = Yap_TermToString(t, buf, sze, &length, &enc, flags)) != buf) {
     if (b) free(b);
     RECOVER_MACHINE_REGS();
+    //printf("1,2--%d    %p    %p   \n",getpid(),ASP,HR);
     return FALSE;
   }
+  //printf("1,3 A--%d    %p    %p   \n",getpid(),ASP,HR);
   RECOVER_MACHINE_REGS();
+  //printf("1,3 B--%d    %p    %p   \n",getpid(),ASP,HR);
   return TRUE;
 }
 

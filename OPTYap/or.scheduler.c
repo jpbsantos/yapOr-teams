@@ -194,12 +194,20 @@ int get_work(void) {
   PUT_IDLE(worker_id);
   UNLOCK_WORKER(worker_id);
   SCH_refuse_share_request_if_any();
+#ifdef YAPOR_MPI
+  SCH_check_delegate_share();
+#endif
   
   counter = 0;
   BITMAP_difference(stable_busy, OrFr_members(LOCAL_top_or_fr), GLOBAL_bm_idle_workers);
-  //printf("(%d,%d)____________________________________________________SCEDULLER %d   (%d)\n",comm_rank,worker_id,GLOBAL_bm_root_cp_workers,GLOBAL_bm_idle_workers);  
-   while (1) {    
+  //  printf("(%d,%d)____________________________________________________SCEDULLER %d   (%d)\n",comm_rank,worker_id,GLOBAL_bm_root_cp_workers,GLOBAL_bm_idle_workers);  
+   while (1) {
 
+#ifdef YAPOR_MPI
+     if(worker_id == 0){
+     SCH_check_messages(1);
+     }
+#endif    
     while (BITMAP_subset(GLOBAL_bm_idle_workers, OrFr_members(LOCAL_top_or_fr)) &&
            Get_LOCAL_top_cp() != Get_GLOBAL_root_cp()) {
       /* no busy workers here and below */

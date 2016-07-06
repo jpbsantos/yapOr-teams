@@ -311,12 +311,54 @@ struct comm_optyap_data {
 };
 #endif
 
+#ifdef YAPOR_MPI
+
+struct delegate_data {
+ long arena_start;
+ int is_free;
+ int worker_q;
+ int worker_p;
+ volatile int messages;
+ int len;
+ int msg_ok;
+ int worker_q_time;
+ int worker_q_new_load;
+};
+
+#endif
+
 struct global_optyap_data {
   /* global data related to memory management */
   struct global_pages pages;
 
+#ifdef YAPOR_MPI
+  int* team_array2_;
+  int  time_stamp;
+  CELL *buff_;
+  REGSTORE *regs;
+
+  int delay_msg_;
+  int delay_msg_count_;
+  int delay_count_;
+
+  int msg_count_;
+  int share_count_;
+
+  int execution_counter_;
+
+  volatile bitmap delegated_workers;
+  int n_arenas;
+  int n_free_arenas;
+  struct delegate_data delegate_work[10];
+
+  int mpi_n_teams;
+  
+#endif
+
 #ifdef YAPOR_TEAMS
   int mpi_load[100];
+  int mpi_load_time[100];
+  lockvar lock_load_arrays;
   volatile bitmap present_team_workers;
   volatile Term data_base_key;
   int comm_rank_;
@@ -467,8 +509,42 @@ struct global_optyap_team_data {
 #define  GLOBAL_comm_number(tid)                (GLOBAL_optyap_team_data.global_optyap_data_[tid].comm_number)
 
 #ifdef YAPOR_MPI
+#define  GLOBAL_mpi_n_teams			(OPT->mpi_n_teams)
+#define  GLOBAL_mpi_delegated_workers			(OPT->delegated_workers)
+#define  GLOBAL_mpi_n_arenas                 (OPT->n_arenas)
+#define  GLOBAL_mpi_n_free_arenas                 (OPT->n_free_arenas)
+//mpi_delegate
+#define  GLOBAL_mpi_delegate_arena_start(index)                 (OPT->delegate_work[index].arena_start)
+#define  GLOBAL_mpi_delegate_is_free(index)                     (OPT->delegate_work[index].is_free)
+#define  GLOBAL_mpi_delegate_worker_q(index)                    (OPT->delegate_work[index].worker_q)
+#define  GLOBAL_mpi_delegate_worker_p(index)                    (OPT->delegate_work[index].worker_p)
+#define  GLOBAL_mpi_delegate_messages(index)                    (OPT->delegate_work[index].messages)
+#define  GLOBAL_mpi_delegate_len(index)                         (OPT->delegate_work[index].len)
+#define  GLOBAL_mpi_msg_ok_sent(index)                               (OPT->delegate_work[index].msg_ok)
+#define  GLOBAL_mpi_delegate_time(index)                               (OPT->delegate_work[index].worker_q_time)
+#define  GLOBAL_mpi_delegate_new_load(index)                               (OPT->delegate_work[index].worker_q_new_load)
+//mpi_delegate
 #define  GLOBAL_mpi_active                      (GLOBAL_optyap_team_data.mpi_active)
+
+#define  get_GLOBAL_mpi_load                        (OPT->mpi_load)
+#define  get_GLOBAL_mpi_load_time                   (OPT->mpi_load_time)
+
+#define  GLOBAL_lock_load_arrays                 (OPT->lock_load_arrays)
 #define  GLOBAL_mpi_load(index)                 (OPT->mpi_load[index])
+#define  GLOBAL_mpi_load_time(index)            (OPT->mpi_load_time[index])
+
+#define  GLOBAL_team_array2                      (OPT->team_array2_)
+#define  GLOBAL_buff                            (OPT->buff_)
+#define  GLOBAL_regs                            (OPT->regs)
+
+#define  GLOBAL_execution_counter                     (OPT->execution_counter_)
+
+#define  GLOBAL_time_stamp                     (OPT->time_stamp)
+#define  GLOBAL_share_count                    (OPT->share_count_)
+#define  GLOBAL_msg_count                      (OPT->msg_count_)
+#define  GLOBAL_delay_msg                      (OPT->delay_msg_)
+#define  GLOBAL_delay_msg_count                (OPT->delay_msg_count_)
+#define  GLOBAL_delay_count                    (OPT->delay_count_)
 #endif
 
 #define  GLOBAL_local_id(index)                 (GLOBAL_optyap_team_data.local_id[index])
@@ -561,6 +637,10 @@ struct global_optyap_team_data {
 
 struct local_optyap_data {
 
+#ifdef YAPOR_MPI
+volatile int delegate_share_area;
+#endif
+
 #ifdef YAPOR_TEAMS
 int is_team_share;
 #endif
@@ -621,6 +701,13 @@ int is_team_share;
 
 #ifdef YAPOR_TEAMS
 #define LOCAL_is_team_share                (LOCAL_optyap_data.is_team_share)
+#endif
+
+#ifdef YAPOR_MPI
+
+#define LOCAL_delegate_share_area           (LOCAL_optyap_data.delegate_share_area)
+#define REMOTE_delegate_share_area(wid)     (REMOTE(wid)->optyap_data_.delegate_share_area)
+
 #endif
 
 #define LOCAL_pages_void                   (LOCAL_optyap_data.pages.void_pages)

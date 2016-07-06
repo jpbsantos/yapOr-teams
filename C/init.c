@@ -1175,21 +1175,23 @@ void Yap_init_yapor_workers(void) {
 
 
 #ifdef YAPOR_MPI
-   printf(" SLAVE \n");
-#include "mpi.h" 
+   //printf(" SLAVE \n");
+#include "mpi.h"
    MPI_Comm parent; 
    MPI_Init(NULL, NULL); 
    MPI_Comm_get_parent(&parent); 
    if (parent != MPI_COMM_NULL){
+   //freopen("/dev/null", "w", stdout);
+   //freopen("/dev/null", "w", stderr); 
       //GLOBAL_mpi_active = 1;
       CurrentModule = USER_MODULE;
       GLOBAL_parallel_mode = PARALLEL_MODE_ON;
       P = MPISTART;
-      Yap_exec_absmi(FALSE);
+      Yap_exec_absmi(FALSE, YAP_EXEC_ABSMI);
       Yap_Error(INTERNAL_ERROR, TermNil, "abstract machine unexpected exit (YAP_Init)");
    }     
 #endif
-printf("_____________________  (%d)  %p ----------------------- \n",worker_id,B);
+//printf("_____________________  (%d)  %p ----------------------- \n",worker_id,B);
 }
 #endif /* YAPOR */
 
@@ -1315,14 +1317,16 @@ InitCodes(void)
     PredEntry *modp = RepPredProp(PredPropByFunc(FunctorModule,PROLOG_MODULE));
     modp->PredFlags |= MetaPredFlag;
   }
+
+
 #ifdef YAPOR
   Yap_heap_regs->getwork_code->y_u.Otapl.p = RepPredProp(PredPropByAtom(AtomGetwork, PROLOG_MODULE));
   Yap_heap_regs->getwork_seq_code->y_u.Otapl.p = RepPredProp(PredPropByAtom(AtomGetworkSeq, PROLOG_MODULE));
 #endif /* YAPOR */
 
 #ifdef YAPOR_TEAMS
-Yap_heap_regs->invalidwork_code->u.Otapl.p = RepPredProp(PredPropByAtom(AtomInvalidwork, PROLOG_MODULE));
-Yap_heap_regs->mpistart_code->u.Otapl.p = RepPredProp(PredPropByAtom(AtomMPIStart, PROLOG_MODULE));
+Yap_heap_regs->invalidwork_code->y_u.Otapl.p = RepPredProp(PredPropByAtom(AtomInvalidwork, PROLOG_MODULE));
+Yap_heap_regs->mpistart_code->y_u.Otapl.p = RepPredProp(PredPropByAtom(AtomMPIStart, PROLOG_MODULE));
 #endif
 
 }
@@ -1393,7 +1397,7 @@ Yap_InitWorkspace(UInt Heap, UInt Stack, UInt Trail, UInt Atts, UInt max_table_s
   if (n_workers > MAX_WORKERS)
     Yap_Error(INTERNAL_ERROR, TermNil, "excessive number of workers");
 #ifdef YAPOR_COPY
-  INFORMATION_MESSAGE("YapOr: copy model with %d worker%s", n_workers, n_workers == 1 ? "":"s");
+  //INFORMATION_MESSAGE("YapOr: copy model with %d worker%s", n_workers, n_workers == 1 ? "":"s");
 #elif YAPOR_COW
   INFORMATION_MESSAGE("YapOr: acow model with %d worker%s", n_workers, n_workers == 1 ? "":"s");
 #elif YAPOR_SBA
@@ -1497,6 +1501,18 @@ Yap_exit (int value)
 #if defined(YAPOR_COPY) || defined(YAPOR_COW) || defined(YAPOR_SBA)
   Yap_unmap_yapor_memory();
 #endif /* YAPOR_COPY || YAPOR_COW || YAPOR_SBA */
+
+#ifdef YAPOR_TEAMS
+#  include "mpi.h" 
+   MPI_Comm parent; 
+   MPI_Comm_get_parent(&parent); 
+   if (parent == MPI_COMM_NULL && R_COMM_mpi_comm(0) ){
+     char goal[300];
+     goal[0]='\0';
+     MPI_Send(goal,300,MPI_CHAR,0,0,R_COMM_mpi_comm(0));
+   }     
+   MPI_Finalize();
+#endif
 
   if (! (LOCAL_PrologMode & BootMode) ) {
 #ifdef LOW_PROF

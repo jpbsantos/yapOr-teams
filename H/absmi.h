@@ -817,10 +817,17 @@ Macros to check the limits of stacks
 #endif
 
 #ifdef YAPOR
+#ifdef YAPOR_SPLIT
+#define YAPOR_update_alternative(CUR_ALT, NEW_ALT)  \
+	  if (B < GLOBAL_root_cp) {               \
+	    SCH_new_alternative(CUR_ALT, NEW_ALT);  \
+	  } else
+#else
 #define YAPOR_update_alternative(CUR_ALT, NEW_ALT)  \
 	  if (SCH_top_shared_cp(B)) {               \
 	    SCH_new_alternative(CUR_ALT, NEW_ALT);  \
 	  } else
+#endif
 #else
 #define YAPOR_update_alternative(CUR_ALT, NEW_ALT)
 #endif /* YAPOR */

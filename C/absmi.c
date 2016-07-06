@@ -3140,14 +3140,14 @@ Yap_absmi(int inp)
         //ATENCAO ATENCAO ATENCAO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         //B = LOCAL_start_local_copy;
         //int *a=NULL;
-        printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT   (%d,%d)  TEAM SHARE   \n",comm_rank,worker_id);
+        //printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT   (%d,%d)  TEAM SHARE   \n",comm_rank,worker_id);
         //sleep(30);
         LOCAL_is_team_share = 2;
       }
       else{
         B = Get_LOCAL_top_cp();
-        if(LOCAL_is_team_share == 55)
-          printf("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN   (%d,%d)  NORMAL SHARE %p \n",comm_rank,worker_id, B);
+        //if(LOCAL_is_team_share == 55)
+          //printf("NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN   (%d,%d)  NORMAL SHARE %p \n",comm_rank,worker_id, B);
         LOCAL_is_team_share = 2;
       }
 #else

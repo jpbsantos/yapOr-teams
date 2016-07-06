@@ -172,18 +172,28 @@ void Yap_init_global_optyap_data(int max_table_size, int n_workers, int sch_loop
 
 #ifdef YAPOR_TEAMS
 if(team_id == 0 && worker_id==0){
-    printf("_____AQUI\n");
+    //printf("_____AQUI %d\n", comm_rank);
     GLOBAL_mpi_active = 0;
-#ifdef YAPOR_MPI
+    GLOBAL_time_stamp = 1;
+if(comm_rank != 0)
     GLOBAL_mpi_load(0) = 1;
-    for(i=1;i<100;i++)
+    for(i=1;i<100;i++){
+    GLOBAL_mpi_load_time(i) = 0;
     GLOBAL_mpi_load(i) = 0;
-#endif
+    }
     GLOBAL_worker_pid(0) = getpid();
     GLOBAL_worker_pid_counter = 1;
     GLOBAL_counter_teams = 0;
     GLOBAL_counter_comms = 0;
+    GLOBAL_execution_counter = 0;
     GLOBAL_start_area = LOCAL_GlobalBase;
+#ifdef YAPOR_MPI
+  BITMAP_clear(GLOBAL_mpi_delegated_workers);
+  GLOBAL_mpi_n_arenas = 4;
+  GLOBAL_mpi_n_free_arenas = 4;
+  INIT_LOCK(GLOBAL_lock_load_arrays);
+   
+#endif         
     GLOBAL_team_area_pointer(0) = LOCAL_GlobalBase;
     GLOBAL_team_area_pointer(1) = LOCAL_GlobalBase + Yap_worker_area_size;
     GLOBAL_local_id(0) = 0;
@@ -268,6 +278,10 @@ void Yap_init_local_optyap_data(int wid) {
   INIT_LOCK(ThDepFr_lock(GLOBAL_th_dep_fr(wid)));
 #endif /* THREADS_CONSUMER_SHARING */
 #endif /* TABLING */
+
+#ifdef YAPOR_MPI
+REMOTE_delegate_share_area(wid) = MAX_WORKERS;
+#endif
   return;
 }
 

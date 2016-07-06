@@ -933,6 +933,9 @@ typedef struct choicept {
 #ifdef YAPOR
   int cp_lub;           /* local untried branches */
   struct or_frame *cp_or_fr;  /* or-frame pointer */
+#ifdef YAPOR_SPLIT
+  int cp_so;
+#endif
 #endif /* YAPOR */
   yamop *cp_ap;
 #endif /* DETERMINISTIC_TABLING */

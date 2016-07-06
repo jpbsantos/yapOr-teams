@@ -613,7 +613,7 @@ Yap_Error(yap_error_number type, Term where, char *format,...)
       fprintf(stderr,"%%\n%%\n");
     } else {
       fprintf(stderr,"%%\n%%\n");
-      fprintf(stderr,"%% YAP OOOPS: %s.  (%d,%d)  B= %p  root=%p   B->cp_ap = %p top_cp = %p  LOCAL = %p\n",tmpbuf,team_id,worker_id,B,GLOBAL_root_cp,B->cp_ap,LOCAL_top_cp,LOCAL);
+      fprintf(stderr,"%% YAP OOOPS: %s.  (%d)  B= %p  root=%p   B->cp_ap = %p top_cp = %p  LOCAL = %p\n",tmpbuf,getpid(),B,GLOBAL_root_cp,B->cp_ap,LOCAL_top_cp,LOCAL);
       fprintf(stderr,"%%\n%%\n");
     }
     detect_bug_location(P, FIND_PRED_FROM_ANYWHERE, (char *)HR, 256);

@@ -212,9 +212,15 @@ create_team(Nworkers,TeamName) :-
    yapor_team(TeamName,A,1).
 
 %%%%% create_comm %%%%%%%
+deal_with_list([(Host,NWorkers)|XS],[Host|HostList],[NWorkers|NWokersList]):- writeln(Host),deal_with_list(XS,HostList,NWokersList).
+deal_with_list([],[],[]).  
+
 create_comm(TeamList,ComName) :-
     length(TeamList,Number_teams),
-   '$c_create_comm'(TeamList,Number_teams,CommId),
+    deal_with_list(TeamList,HostList,NWokersList),
+    writeln(HostList),
+    writeln(NWokersList),    
+   '$c_create_comm'(NWokersList,HostList,Number_teams,CommId),
     assertz(yapor_team(ComName,CommId)).
 
 
@@ -279,19 +285,17 @@ parallel_findall_test(Template,Goal,Answers) :-
 
 %%%%% MPI parallel_findall_test %%%%%%%
 
-mpi_parallel_findall_test(Template,Goal,Answers) :- 
-   parallel_mode(Mode), Mode = on, !,
-   '$mpi_parallel_findall_query_test'(Template,Goal).
-
-
-'$mpi_parallel_findall_query_test'(Template,Goal) :-
+mpi_parallel_findall_test(Template,Goal,Answers) :-
+   parallel_mode(Mode), Mode = on,
    '$c_yapor_start'(1),
    '$execute'(Goal), 
    %writeln(Template),
    %recordz(parallel_findall,Template,Ref),
    '$c_mpi_parallel_new_answer'(Template),
    fail.
-'$mpi_parallel_findall_query_test'(_,_).
+
+
+mpi_parallel_findall_test(Template,Goal,Answers).
 
 %%%%% parallel_findall_test_no_store_ans %%%%%%%
 
@@ -313,7 +317,7 @@ parallel_findall_test_no_store_ans(Template,Goal,Answers) :-
 
 mpi_parallel_findall_test_no_store_ans(Template,Goal,Answers) :-
    parallel_mode(Mode),Mode = on, !,
-   '$mpi_parallel_findall_query_test_no_store_ans'(Template,Goal),fail.
+   '$mpi_parallel_findall_query_test_no_store_ans'(Template,Goal),writeln('AQUI_______________________________________________'),fail.
 
 
 '$mpi_parallel_findall_query_test_no_store_ans'(Template,Goal) :- 
@@ -325,4 +329,35 @@ mpi_parallel_findall_test_no_store_ans(Template,Goal,Answers) :-
    fail.
 '$mpi_parallel_findall_query_test_no_store_ans'(_,_).
 
+%%%%% MPI SOLVE BUG %%%%%%%
+ 
+mpi_solve_bug(ConsultCall,TeamName):-
+     yapor_team(TeamName,Id), 
+     '$c_mpi_solve_bug'(Id,ConsultCall).
+ 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%new syntax
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+generate_indexing_code(Path,Comm,Goal):- mpi_prompt,
+                                         mpi_solve_bug(Path,Comm),
+                                         mpi_parallel_barrier(Comm).
+generate_indexing_code(Path,Comm,Goal):- not mpi_prompt,
+					 user:call(Goal).
+
+par_run_goal(Comm,Goal,Template):-not ground(Template),parallel(Comm,mpi_parallel_findall_test(Template,Goal,L),1),!.
+
+par_run_goal(Comm,Goal,Template):- ground(Template), parallel(Comm,mpi_parallel_findall_test_no_store_ans(Template,Goal,L),1),
+                                                mpi_parallel_barrier(Comm).
+
+par_get_answers(Comm,Mode,L,N):-Mode == exact(all), mpi_get_results(Comm,L),length(L,N).
+par_get_answers(Comm,Mode,L,N):-Mode \= exact(all), write(Mode),writeln(' this mode is not currently supported').
+
+
+
+remove([],L).
+remove([team(A,B,C)|XS],[(A,B)|L]):- remove(XS,L).
+
+par_create_parallel_engine(Comm,TeamList):-mpi_prompt,remove(TeamList,NewTeamList),create_comm(NewTeamList,Comm).

@@ -858,8 +858,9 @@ char *
 Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int flags)
 {
   CACHE_REGS
-  Int l, CurSlot;
-
+    Int l, CurSlot;
+  Int myASP = LCL0-ASP;
+  
   CurSlot = Yap_StartSlots( PASS_REGS1 );
   l = Yap_InitSlot(t  PASS_REGS );
 
@@ -898,12 +899,17 @@ Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int 
 	    /* found, just check if using local space */
 	    if (r == buf) {
 	      char *bf = malloc(*length+1);
-	      if (!bf)
+	      if (!bf) {
+		LOCAL_CurSlot = CurSlot;
+                ASP = LCL0-myASP;
 		return NULL;
+	      }
 	      strncpy(bf,buf,*length+1);
 	      r = bf;
 	    }
-	    return r;
+            LOCAL_CurSlot = CurSlot;
+            ASP = LCL0-myASP;
+  	    return r;
 	  } else
 	  { Sclose(fd);
 	  }
@@ -914,8 +920,73 @@ Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int 
     }
   }
   LOCAL_CurSlot = CurSlot;
+  ASP = LCL0-myASP;
   return NULL;
 }
+
+
+/*char *
+Yap_TermToString(Term t, char *s, size_t sz, size_t *length, int *encoding, int flags)
+{
+  CACHE_REGS
+  Int l, CurSlot;
+
+  CurSlot = Yap_StartSlots( PASS_REGS1 );
+  l = Yap_InitSlot(t  PASS_REGS );
+
+  { IOENC encodings[3];
+    IOENC *enc;
+    char *r, buf[256];
+
+    encodings[0] = ENC_ISO_LATIN_1;
+    encodings[1] = ENC_WCHAR;
+    encodings[2] = ENC_UNKNOWN;
+
+    for(enc = encodings; *enc != ENC_UNKNOWN; enc++)
+      { 
+	int64_t size;
+	IOSTREAM *fd;
+
+	if (s) {
+	  r = s;
+	} else {
+	  r = buf;
+	}
+	fd = Sopenmem(&r, &sz, "w");
+	fd->encoding = *enc;
+	if ( PL_write_term(fd, l, 1200, flags) &&
+	     Sputcode(EOS, fd) >= 0 &&
+	     Sflush(fd) >= 0 )
+	  { *encoding = *enc;
+	    size = Stell64(fd);
+	    if ( *enc == ENC_ISO_LATIN_1 )
+	      { 
+		*length = size-1;
+	      } else
+	      { 
+		*length = (size/sizeof(pl_wchar_t))-1;
+	      }
+	
+	    if (r == buf) {
+	      char *bf = malloc(*length+1);
+	      if (!bf)
+		return NULL;
+	      strncpy(bf,buf,*length+1);
+	      r = bf;
+	    }
+	    return r;
+	  } else
+	  { Sclose(fd);
+	  }
+      }
+
+    if ( r != s && r != buf ) {
+      Sfree(r);
+    }
+  }
+  LOCAL_CurSlot = CurSlot;
+  return NULL;
+}*/
 
 char *
 Yap_HandleToString(term_t l, size_t sz, size_t *length, int *encoding, int flags)
